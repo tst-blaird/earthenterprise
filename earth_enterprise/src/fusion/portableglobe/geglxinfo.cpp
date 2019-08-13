@@ -42,6 +42,94 @@
 
 namespace {
 
+const std::map<uint32, std::string> vTypeNames = {
+  {TYPE_STREETPACKET, "TYPE_STREETPACKET"},
+  {TYPE_SITEPACKET, "TYPE_SITEPACKET"},
+  {TYPE_DRAWABLEPACKET, "TYPE_DRAWABLEPACKET"},
+  {TYPE_POLYLINEPACKET, "TYPE_POLYLINEPACKET"},
+  {TYPE_AREAPACKET, "TYPE_AREAPACKET"},
+  {TYPE_STREETPACKET_UTF8, "TYPE_STREETPACKET_UTF8"},
+  {TYPE_SITEPACKET_UTF8, "TYPE_SITEPACKET_UTF8"},
+  {TYPE_LANDMARK, "TYPE_LANDMARK"},
+  {TYPE_POLYGONPACKET, "TYPE_POLYGONPACKET"}
+};
+
+struct etPattern
+{
+    /*The purpose of this structure is uncertain, but it exists at the beginning of
+    each string buffer and must be skipped past to find the string data.*/
+  int signature;
+  unsigned short length;
+  unsigned short width;
+};
+ 
+struct PacketHeader {
+  uint32_t keyholeMagic;        // must be 32301 or the packet is not valid
+  uint32_t dataTypeId;          // identifies the type of vector data (defines found in packet.h)
+  uint32_t packetFormatVersion;
+  uint32_t numInstances;
+  uint32_t dataInstanceSize;
+  uint32_t dataBufferOffset;
+  uint32_t dataBufferSize;
+  uint32_t metaBufferSize;
+};
+ 
+struct ChildDataPacket {
+    PacketHeader header; 
+    uint32_t metaHeader_OFFSET;
+    uint32_t packetBuffer_OFFSET;
+    int packetBufferSize;
+    uint32_t dataInstances_OFFSET;
+    uint32_t dataBuffer_OFFSET;
+    int maxDataBufferSize;
+};
+ 
+struct ParentPacket{
+    PacketHeader header;
+    // The size of dataInstancesAndDataBuffer is
+    //      header.dataBufferSize + (header.numInstances * header.dataInstanceSize)
+    // The data instances start at &dataInstancesAndDataBuffer[0] and are of
+    //      type ChildDataPacket.
+    // The data buffer starts at &dataInstancesAndDataBuffer[header.numInstances + header.dataInstanceSize]
+    char dataInstancesAndDataBuffer[];
+};
+ 
+/*
+* The following structures will be found as Data Instances for
+* child packets. Structures for the other packet types can be
+* found in packet.h.
+* NOTE: The structures that end in _BASE32 in packet.h are generally
+* easier to use to determine the structure of packet data.
+*/
+struct StreetPacketData {
+  uint32_t      name;
+  int           textId_deprecated;
+  uint16_t      numPt;
+  uint16_t      bitFlags;
+  uint32_t      localPt;
+  int           style;
+};
+ 
+struct PolygonPacketData {
+    uint32_t    name;
+    int         reserved1;
+    uint16_t    numPt;
+    uint16_t    bitFlags;
+    uint16_t    numEdgeFlags;
+    uint32_t    localPt;
+    uint32_t    edgeFlags;
+    int         style;
+};
+ 
+/*
+* This structure represents a single point in a vector and is found in most
+* types of packet data structures.
+*/
+struct etVec3d
+{
+  double elem[3];
+};
+
 // Calculate the x and y coordinates for the given btree (quadtree)
 // and level. The btree is a 48-bit representation of up to a
 // 24-level address. It is filled from the high bits down. The
@@ -150,6 +238,170 @@ bool getPackageFileLocs(GlcUnpacker* const unpacker,
   return true;
 }
 
+void printVectorPacketCommon(const LittleEndianReadBuffer& buffer, std::ostringstream& s) {
+
+  const auto& dataPacket = reinterpret_cast<const etDataPacket*>(buffer.data());
+
+  const auto typeNameIter = vTypeNames.find(dataPacket->packetHeader.dataTypeID);
+  std::string vectorDataType = "unknown";
+  if (typeNameIter != vTypeNames.end()) {
+    vectorDataType = typeNameIter->second;
+  }
+
+  s << "etPacketHeader fields:" << std::endl;
+  s << "  dataBufferOffset = " << dataPacket->packetHeader.dataBufferOffset << std::endl;
+  s << "  dataBufferSize = " << dataPacket->packetHeader.dataBufferSize << std::endl;
+  s << "  dataInstanceSize = " << dataPacket->packetHeader.dataInstanceSize << std::endl;
+  s << "  dataTypeID = " << dataPacket->packetHeader.dataTypeID << " -- " << vectorDataType << std::endl;
+  s << "  magicID = " << dataPacket->packetHeader.magicID 
+    << " (0x" << std::hex << dataPacket->packetHeader.magicID << std::dec << ")" << std::endl;
+  s << "  metaBufferSize = " << dataPacket->packetHeader.metaBufferSize << std::endl;
+  s << "  numInstances = " << dataPacket->packetHeader.numInstances << std::endl;
+  s << "  version = " << dataPacket->packetHeader.version << std::endl;
+  s << std::endl;
+
+  /*
+  s << "etDataPacket fields:" << std::endl;
+  s << "  dataBuffer_OFFSET = " << dataPacket->dataBuffer_OFFSET << std::endl;
+  s << "  datafilesize = " << dataPacket->datafilesize << std::endl;
+  s << "  dataInstances_OFFSET = " << dataPacket->dataInstances_OFFSET << std::endl;
+  s << "  flatbasename = " << dataPacket->flatbasename << std::endl;
+  s << "  flatdataname = " << dataPacket->flatdataname << std::endl;
+  s << "  maxDataBufferSize = " << dataPacket->maxDataBufferSize << std::endl;
+  s << "  metaHeader_OFFSET = " << dataPacket->metaHeader_OFFSET << std::endl;
+  s << std::endl;
+  */
+}
+
+// void printVectorDataPacket(const etDataPacket* dataPacket, std::ostringstream& s) {
+
+//     const auto typeNameIter = vTypeNames.find(dataPacket->packetHeader.dataTypeID);
+//     std::string vectorDataType = "unknown";
+//     if (typeNameIter != vTypeNames.end()) {
+//       vectorDataType = typeNameIter->second;
+//     }
+
+//     s << "    magicID  = " << dataPacket->packetHeader.magicID << std::endl;
+//     s << "    dataType = " << vectorDataType << std::endl;
+//     s << "    packetHeader.numInstances = " << dataPacket->packetHeader.numInstances << std::endl;
+
+//     if (dataPacket->packetHeader.dataTypeID == TYPE_STREETPACKET) {
+//       //const auto& streetPacket = reinterpret_cast<const etStreetPacket*>(buffer.data());
+//     } else if (dataPacket->packetHeader.dataTypeID == TYPE_SITEPACKET) {
+//       //const auto& sitePacket = reinterpret_cast<const etSitePacket*>(buffer.data());
+//     } else if (dataPacket->packetHeader.dataTypeID == TYPE_DRAWABLEPACKET) {
+//       //const auto& drawablePacket = reinterpret_cast<const etDrawablePacket*>(buffer.data());
+//     } else if (dataPacket->packetHeader.dataTypeID == TYPE_POLYLINEPACKET) {
+//       //const auto& polyLinePacket = reinterpret_cast<const etPolyLinePacket*>(buffer.data());
+//     } else if (dataPacket->packetHeader.dataTypeID == TYPE_AREAPACKET) {
+//       //const auto& areaPacket = reinterpret_cast<const etAreaPacket*>(buffer.data());
+//     } else if (dataPacket->packetHeader.dataTypeID == TYPE_STREETPACKET_UTF8) {
+//       //s << "unhandled dataTypeID" << std::endl;
+//       //const auto& streetPacket = reinterpret_cast<const etStreetPacket*>(buffer.data());
+//       //const auto& streetPacket = reinterpret_cast<const etStreetPacketData_BASE32*>(buffer.data());
+//       //s << "  " << i << ": streetPacket->style = " << streetPacket->style << std::endl;
+//       //s << "  " << i << ": streetPacket->style = " << streetPacket-> << std::endl;
+//       //s << "  " << i << ": packetHeader.numInstances = " << streetPacket->packetHeader. << std::endl;
+//     } else if (dataPacket->packetHeader.dataTypeID == TYPE_SITEPACKET_UTF8) {
+//       s << "unhandled dataTypeID" << std::endl;
+//     } else if (dataPacket->packetHeader.dataTypeID == TYPE_LANDMARK) {
+//       //const auto& landmarkPacket = reinterpret_cast<const etLandmarkPacket*>(buffer.data());
+//     } else if (dataPacket->packetHeader.dataTypeID == TYPE_POLYGONPACKET) {
+//       //const auto& polygonPacket = reinterpret_cast<const etPolygonPacket*>(buffer.data());
+//     } else {
+//       s << "unknown dataTypeID" << std::endl;
+//     }
+
+//     for (id_size i = 0; i < dataPacket->packetHeader.numInstances; i++) {
+//       dataPacket->
+//       const auto& childDataPacket = reinterpret_cast<const etDataPacket*>(dataPacket.getDataInstanceP(i));
+//       printVectorDataPacket(childDataPacket, s);
+//     }
+// }
+
+void printVectorPacket(const LittleEndianReadBuffer& buffer, std::ostringstream& s) {
+
+  printVectorPacketCommon(buffer, s);
+
+  const ParentPacket *pParentPacket = (ParentPacket*)buffer.data();
+
+  // Data instances in the parent packet come directly after the header
+  const char *pParentDataInstances = &pParentPacket->dataInstancesAndDataBuffer[0];
+  // The data buffer in the parent packet comes directly after the data instances
+  const char *pParentDataBuffer = &pParentPacket->dataInstancesAndDataBuffer[pParentPacket->header.numInstances*pParentPacket->header.dataInstanceSize];
+
+  s << "pParentPacket->header.numInstances = " << pParentPacket->header.numInstances << std::endl;
+  s << std::endl;
+
+  for(uint32_t idx = 0; idx < pParentPacket->header.numInstances; idx++){
+    ChildDataPacket *pChildPacket = (ChildDataPacket*)(pParentDataInstances + (pParentPacket->header.dataInstanceSize*idx));
+
+    s << "ChildDataPacket " << idx << ":" << std::endl;
+
+    // To get the location of the child packet's data buffer, first add
+    // pChildPacket->header.dataBufferOffset to find the area of the parent
+    // packet's data buffer that is allocated for the child. Then, add
+    // to that pChildPacket->dataBuffer_OFFSET.
+    const char *pChildPacketDataBuffer = pParentDataBuffer +
+                                pChildPacket->header.dataBufferOffset +
+                                pChildPacket->dataBuffer_OFFSET;
+
+    s << "  header.numInstances = " << pChildPacket->header.numInstances << std::endl;
+
+    for(uint32_t instance_idx = 0; instance_idx < pChildPacket->header.numInstances; instance_idx++){
+
+      s << "    Instance " << instance_idx << ":" << std::endl;
+
+      const auto typeNameIter = vTypeNames.find(pChildPacket->header.dataTypeId);
+      std::string vectorDataType = "unknown";
+      if (typeNameIter != vTypeNames.end()) {
+        vectorDataType = typeNameIter->second;
+      }
+
+      s << "      header.dataTypeId: " << vectorDataType << std::endl;
+
+      if(pChildPacket->header.dataTypeId == TYPE_STREETPACKET_UTF8) { // TYPE_STREETPACKET_UTF8
+        // To get the location of the child packet's data instances area,
+        // first add pChildPacket->header.dataBufferOffset to find
+        // the area of the parent packet's data buffer that is allocated for
+        // the child. Add pChildPacket->dataInstances_OFFSET to that to locate
+        // where the data instances start.
+        StreetPacketData *pInstance =
+            (StreetPacketData*)(pParentDataBuffer + pChildPacket->header.dataBufferOffset +
+                                pChildPacket->dataInstances_OFFSET +
+                                pChildPacket->header.dataInstanceSize*instance_idx);
+        const char *name = pChildPacketDataBuffer + pInstance->name + sizeof(etPattern);
+
+        s << "      name: " << name << std::endl;
+        s << "      numPt: " << pInstance->numPt << std::endl;
+
+        // ***NOTE***
+        // To convert the x and y in these points to lon,lat multiply the x and y
+        // values (elem[0] and elem[1]) by 180.0.
+        //etVec3d *pPoints = (etVec3d*)(pChildPacketDataBuffer + pInstance->localPt);
+      }
+      else if(pChildPacket->header.dataTypeId == TYPE_POLYGONPACKET){ // TYPE_POLYGONPACKET
+        PolygonPacketData *pInstance =
+            (PolygonPacketData*)(pParentDataBuffer + pChildPacket->header.dataBufferOffset +
+                                pChildPacket->dataInstances_OFFSET +
+                                pChildPacket->header.dataInstanceSize*instance_idx);                                           
+        const char *name = pChildPacketDataBuffer + pInstance->name + sizeof(etPattern);
+
+        s << "      name: " << name << std::endl;
+        s << "      numPt: " << pInstance->numPt << std::endl;
+
+        // ***NOTE***
+        // To convert the x and y in these points to lon,lat multiply the x and y
+        // values (elem[0] and elem[1]) by 180.0.
+        //etVec3d *pPoints = (etVec3d*)(pChildPacketDataBuffer + pInstance->localPt);
+        //bool *pEdgeFlags = (bool*)(pChildPacketDataBuffer + pInstance->edgeFlags);
+      }
+
+      s << std::endl;
+    }
+  }
+}
+
 void extractAllPackets(GlcUnpacker* const unpacker,
                     PortableGlcReader* const reader,
                     uint64 start_idx,
@@ -200,7 +452,9 @@ void extractAllPackets(GlcUnpacker* const unpacker,
       if (index_item.packet_size >= max_size) {
         std::cout << "Data item is too big: " << i
                   << " size: " << index_item.packet_size << std::endl;
-      } else if (reader->ReadData(
+     } else if (index_item.channel != 5) {
+       //std::cout << "skipping channel " << index_item.channel << std::endl;
+     } else if (reader->ReadData(
           &buffer[0], data_offset, index_item.packet_size)) {
         if (unpacker->Is2d()) {
           writePacketToFile(index_item, buffer, true, "maptiles", "");
@@ -246,11 +500,12 @@ void extractAllPackets(GlcUnpacker* const unpacker,
           writePacketToFile(index_item, buffer, false, "globetiles", "_dbroot");
         }
         else if (index_item.packet_type == kVectorPacket) {
+          //std::cout << "vector packet, channel == " << index_item.channel << std::endl;
           LittleEndianReadBuffer decompressed;
           etEncoder::DecodeWithDefaultKey(&buffer[0], buffer.size());
           if (KhPktDecompress(buffer.data(), buffer.size(), &decompressed) &&
              (decompressed.size() >= sizeof(uint32)*2)) {
-            const uint32* vectorData = reinterpret_cast<const uint32*>(decompressed.data());
+            const auto& vectorData = reinterpret_cast<const etDataHeader*>(decompressed.data());
             std::map<uint32, std::string> vTypeNames = {
               {TYPE_STREETPACKET, "street"},
               {TYPE_SITEPACKET, "site"},
@@ -262,12 +517,14 @@ void extractAllPackets(GlcUnpacker* const unpacker,
               {TYPE_LANDMARK, "landmark"},
               {TYPE_POLYGONPACKET, "polygon"}
             };
-            auto typeNameIter = vTypeNames.find(vectorData[1]);
+            auto typeNameIter = vTypeNames.find(vectorData->dataTypeID);
             std::string vectorDataType = "unknown";
             if (typeNameIter != vTypeNames.end()) {
               vectorDataType = typeNameIter->second;
             }
-            writePacketToFile(index_item, decompressed, false, "globetiles", "_vector_"+vectorDataType);
+            std::ostringstream s;
+            printVectorPacket(decompressed, s);
+            writePacketToFile(index_item, s.str(), false, "globetiles", "_vector_"+vectorDataType);
           }
         }
         else {
