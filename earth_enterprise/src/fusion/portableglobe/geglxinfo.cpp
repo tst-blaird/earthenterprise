@@ -373,6 +373,7 @@ void printVectorPacket(const LittleEndianReadBuffer& buffer, std::ostringstream&
         const char *name = pChildPacketDataBuffer + pInstance->name + sizeof(etPattern);
 
         s << "      name: " << name << std::endl;
+        s << "      style: " << pInstance->style << std::endl;
         s << "      numPt: " << pInstance->numPt << std::endl;
 
         // ***NOTE***
@@ -388,6 +389,7 @@ void printVectorPacket(const LittleEndianReadBuffer& buffer, std::ostringstream&
         const char *name = pChildPacketDataBuffer + pInstance->name + sizeof(etPattern);
 
         s << "      name: " << name << std::endl;
+        s << "      style: " << pInstance->style << std::endl;
         s << "      numPt: " << pInstance->numPt << std::endl;
 
         // ***NOTE***
@@ -452,7 +454,7 @@ void extractAllPackets(GlcUnpacker* const unpacker,
       if (index_item.packet_size >= max_size) {
         std::cout << "Data item is too big: " << i
                   << " size: " << index_item.packet_size << std::endl;
-     } else if (index_item.channel != 5) {
+     } else if (index_item.channel == 0) {
        //std::cout << "skipping channel " << index_item.channel << std::endl;
      } else if (reader->ReadData(
           &buffer[0], data_offset, index_item.packet_size)) {
