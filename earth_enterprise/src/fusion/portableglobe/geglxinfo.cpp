@@ -120,6 +120,20 @@ struct PolygonPacketData {
     uint32_t    edgeFlags;
     int         style;
 };
+
+struct LandmarkPacketData {
+  uint32_t      name;
+  uint16_t      numPt;
+  uint16_t      bitFlags;
+  uint32_t      localPt;
+  uint32_t      iconName_deprecated;
+  int           style;
+  uint32_t      description;
+  int           referenceType;
+  uint32_t      reference;
+  int           referenceSize;
+};
+
  
 /*
 * This structure represents a single point in a vector and is found in most
@@ -360,7 +374,7 @@ void printVectorPacket(const LittleEndianReadBuffer& buffer, std::ostringstream&
 
       s << "      header.dataTypeId: " << vectorDataType << std::endl;
 
-      if(pChildPacket->header.dataTypeId == TYPE_STREETPACKET_UTF8) { // TYPE_STREETPACKET_UTF8
+      if (pChildPacket->header.dataTypeId == TYPE_STREETPACKET_UTF8) {
         // To get the location of the child packet's data instances area,
         // first add pChildPacket->header.dataBufferOffset to find
         // the area of the parent packet's data buffer that is allocated for
@@ -380,8 +394,7 @@ void printVectorPacket(const LittleEndianReadBuffer& buffer, std::ostringstream&
         // To convert the x and y in these points to lon,lat multiply the x and y
         // values (elem[0] and elem[1]) by 180.0.
         //etVec3d *pPoints = (etVec3d*)(pChildPacketDataBuffer + pInstance->localPt);
-      }
-      else if(pChildPacket->header.dataTypeId == TYPE_POLYGONPACKET){ // TYPE_POLYGONPACKET
+      } else if (pChildPacket->header.dataTypeId == TYPE_POLYGONPACKET){
         PolygonPacketData *pInstance =
             (PolygonPacketData*)(pParentDataBuffer + pChildPacket->header.dataBufferOffset +
                                 pChildPacket->dataInstances_OFFSET +
@@ -397,6 +410,20 @@ void printVectorPacket(const LittleEndianReadBuffer& buffer, std::ostringstream&
         // values (elem[0] and elem[1]) by 180.0.
         //etVec3d *pPoints = (etVec3d*)(pChildPacketDataBuffer + pInstance->localPt);
         //bool *pEdgeFlags = (bool*)(pChildPacketDataBuffer + pInstance->edgeFlags);
+      } else if (pChildPacket->header.dataTypeId == TYPE_LANDMARK) {
+        LandmarkPacketData *pInstance =
+            (LandmarkPacketData*)(pParentDataBuffer + pChildPacket->header.dataBufferOffset +
+                                pChildPacket->dataInstances_OFFSET +
+                                pChildPacket->header.dataInstanceSize*instance_idx);                                           
+        const char *name_str = pChildPacketDataBuffer + pInstance->name + sizeof(etPattern);
+        const char *desc_str = pChildPacketDataBuffer + pInstance->description + sizeof(etPattern);
+
+        s << "      pInstance->name: " << pInstance->name << std::endl;
+        s << "      name_str: " << name_str << std::endl;
+        s << "      pInstance->description: " << pInstance->description << std::endl;
+        s << "      desc_str: " << desc_str << std::endl;
+        s << "      style: " << pInstance->style << std::endl;
+        s << "      numPt: " << pInstance->numPt << std::endl;
       }
 
       s << std::endl;
