@@ -19,6 +19,7 @@
 #define __khInsetCoverage_h
 
 #include "khTileAddr.h"
+#include "CacheSizeCalculations.h"
 
 // ****************************************************************************
 // ***  khInsetCoverage
@@ -39,6 +40,7 @@ class khInsetCoverage {
   inline uint beginLevel(void) const { return beginLevel_; }
   inline uint endLevel(void)   const { return endLevel_; }
   inline uint numLevels(void)  const { return endLevel() - beginLevel(); }
+  inline uint numVLvls(void)  const { return vec0Level; }
   inline bool hasLevel(uint lev) const {
     return ((lev >= beginLevel()) && (lev < endLevel()));
   }
@@ -176,6 +178,10 @@ class khInsetCoverage {
                   uint stepOutSize,
                   uint paddingSize);
 
+  uint64 GetHeapUsage() const {
+    return ::GetHeapUsage(degree_extents_)
+            + ::GetHeapUsage(extentsVec);
+  }
 };
 
 
@@ -262,6 +268,10 @@ khInsetCoverage::Narrow(CovIter beginOthers, CovIter endOthers)
   }
 
   return false;
+}
+
+inline uint64 GetHeapUsage(const khInsetCoverage &insetCoverage) {
+  return insetCoverage.GetHeapUsage();
 }
 
 #endif /* __khInsetCoverage_h */

@@ -15,7 +15,7 @@ gtag('config', 'UA-108632131-2');
 </script>
 </head>
 <body>
-<!-- 7160002.html -->
+<!-- 7160008.html -->
 <div class="container">
 <div class="sidebar1">
   <p class="sidebar-toc"><a href="../answer/7160008.html" class="current-file">Open GEE 5.3.1</a></p>
@@ -40,19 +40,14 @@ gtag('config', 'UA-108632131-2');
 <h1><a href="../index.html">Google Earth Enterprise Documentation Home</a> | Release notes</h1>
 <h2>Release notes: Open GEE 5.3.1</h2>
 
-<p>Open GEE 5.3.1 is currently in development</p>
+  <h3 id="overview_5.3.1">New Features</h3>
+  <p><strong>Uninstallation scripts are now copied to <code>/opt/google/install</code>. </strong>This will allow the user to uninstall without having to have a copy of the source code on hand.</p>
+  <p><strong>Memory and performance improvements for large builds.</strong> Memory utilization and performance have been improved, especially for large builds.</p>
+  <p><strong>Increased logging during long Fusion operations.</strong> Fusion can now be configured to log progress while calculating overlaps between resources.</p>
+  <p><strong>Overlay option is now supported in terrain project command-line interfaces.</strong> <code>genewterrainproject</code>, <code>geaddterrainproject</code> and <code>gemodifyterrainproject</code> have a new option for overlay support.</p>
+  <p><strong>Cutter embeds extra metadata into portable files.</strong>  The bounding box metadata can be used to improve loading performance in some applications.</p>
+  <h3 id="supported_5.3.1">Supported Platforms</h3>
 
-  <h5>
-    <p id="overview_5.3.1">New Features</p>
-  </h5>
-    <p><strong>Uninstallation scripts are now copied to <code>/opt/google/install</code>. </strong>This will allow the user to uninstall without having to have a copy of the source code on hand.</p>
-    <p><strong>Memory and performance improvements for large builds.</strong> Memory utilization and performance have been improved, especially for large builds.</p>
-    <p><strong>Increased logging during long Fusion operations.</strong> Fusion can now be configured to log progress while calculating overlaps between resources.</p>
-    <p><strong>Overlay option is now supported in terrain project command-line interfaces.</strong> <code>genewterrainproject</code>, <code>geaddterrainproject</code> and <code>gemodifyterrainproject</code> has new option for overlay support.</p>
-    <p><strong>Cutter embeds extra metadata into portable files.</strong>  The bounding box metadata can be used to improve loading performance in some applications.</p>
-  <h5>
-    <p id="supported_5.3.1">Supported Platforms</p>
-  </h5>
   <p>The Open GEE 5.3.1 release is supported on 64-bit versions of the following operating systems:</p>
     <ul>
       <li>Red Hat Enterprise Linux version 6.x and 7.x, including the most recent security patches</li>
@@ -61,10 +56,8 @@ gtag('config', 'UA-108632131-2');
     </ul>
     <p>Google Earth Enterprise 5.3.1 is compatible with Google Earth Enterprise Client (EC) version 7.1.5 and above.</p>
     <p><p>To upgrade from Open GEE 5.2.0, do NOT uninstall it. We recommend that you upgrade Open GEE 5.2.0 by simply installing Open GEE 5.3.1. Installing Open GEE 5.3.1 on top of Open GEE 5.2.0 will ensure that your PostgreSQL databases are backed up and upgraded correctly to the new PostgreSQL version used by Open GEE 5.3.1.</p></p>
-  <h5>
-    <h5>
-      <p id="resolved_issues_5.3.1">Resolved Issues</p>
-    </h5>
+
+    <h3 id="resolved_issues_5.3.1">Resolved Issues</h3>
     <div>
       <table class="nice-table">
         <tbody>
@@ -74,12 +67,85 @@ gtag('config', 'UA-108632131-2');
             <th>Resolution</th>
           </tr>
           <tr>
+            <td>393</td>
+            <td>KML validation message is hidden under KML input box.</td>
+            <td>
+              This change just updates the z-index of the "Invalid KML" dialog box to a higher value than the "Paste KML" z-index.
+            </td>
+          </tr>
+
+          <tr>
+            <td>1236</td>
+            <td>Polygons and Polygon constructors should handle a KML string.</td>
+            <td>
+              In polygontoqtnodes.h, the Polygons and Polygon constructors expect a KML filename from which it creates an ifstream object to read the KML file. A very small change also allows it to read KML that's in an istringstream object. This is added for situations where the KML string has been read from a portable file.
+            </td>
+          </tr>
+
+          <tr>
+            <td>1255</td>
+            <td>Limits internal version string to 3 parts to fix patch releases.</td>
+            <td>
+              Fusion will only track 3 parts of the version string in order to maintain compatibility with the asset root and with client/server messages.
+            </td>
+          </tr>
+
+          <tr>
+            <td>1277</td>
+            <td>Change asset and asset version keys to ints.</td>
+            <td>
+              Fusion uses strings to refer to assets and asset versions (the string corresponds to the asset's location under the asset root). This results in lots of duplicate, possibly long strings since every asset needs to hold the string referring to every other asset it has a relationship with (children, parents, inputs, and listeners). For large builds this can take lots of memory and use extra processing time since string comparisons are inefficient. We should update Fusion to use ints instead of strings when referring to assets and just store a single table relating strings to assets. This should reduce memory consumption and improve performance.
+            </td>
+          </tr>
+
+          <tr>
+            <td>1292</td>
+            <td>Invalid qtpacket status with SharedString fixes.</td>
+            <td>
+              On the release_5.2.5.1_experimental branch with the SharedString fixes, if one builds a project the status of the qtpacket will show as Bad even though it actually built successfully.  This fixes the issue.
+            </td>
+          </tr>
+
+          <tr>
+            <td>1300</td>
+            <td>Add overlay cli.</td>
+            <td>
+              Adds 4 new options to genewterrainproject and gemodifyterrainproject.
+            </td>
+          </tr>
+
+          <tr>
+            <td>1301</td>
+            <td>Combine storage-related code.</td>
+            <td>
+              The code for storing and retrieving assets from disk, caching them in memory, and tracking modified assets is somewhat scattered. We should combine this code to make it easier to understand, easier to switch storage backends, and easier to improve, such as through parallelization. The first step in this direction is to create a storage manager that manages reading, writing, and caching.
+            </td>
+          </tr>
+
+          <tr>
+            <td>1317</td>
+            <td>Test cases for genewimageryresource.</td>
+            <td>
+              Create a set of gauge tests that will test the various command line options for the genewimageryresource utility.
+            </td>
+          </tr>
+
+          <tr>
             <td>1339</td>
-            <td>Building with incomplete assets can result in Blocked databases</td>
+            <td>Building with incomplete assets can result in Blocked databases.</td>
             <td>
               Added error handling to certain asset caching to prevent incomplete assets from being cached. This prevents a version of the DelayedBuildChildren class of errors, and rectifies the <code>run_historical.sh</code> script problem.
             </td>
           </tr>
+
+          <tr>
+            <td>1344</td>
+            <td>Add method in GlcUnpacker to "walk" a single layer.</td>
+            <td>
+              The GlcUnpacker class has a method to walk all of the map packets in all layers of a GLX file.  There should be a corresponding method to walk only the packets in a single layer.
+            </td>
+          </tr>
+
         </tbody>
       </table>
   <h5>
@@ -368,11 +434,20 @@ gtag('config', 'UA-108632131-2');
           <td>Geserver fails to startup fully due to conflicting protobuf library</td>
           <td>Run <code>pip uninstall protobuf</code> to uninstall the protobuf library installed by pip. </td>
         </tr>
+        <tr>
+          <td>1376</td>
+          <td>Portable Globe Cutter fails in the last step when using HTTPS</td>
+          <td>Switch to <code>http</code>. </td>
+        </tr>
+        <tr>
+          <td>1381</td>
+          <td>Stopping Fusion results in double free or corruption error in system manager</td>
+          <td>No current work around but this issue does not seem to cause any other problem.</td>
+        </tr>        
       </tbody>
     </table>
   <div class="footer">
     <p class="BackToTop"><a href="#top_of_file">Back to top</a>
-
     <hr />
     </p>
     <p class="copyright">&copy;2019 Open GEE Contributors</p>

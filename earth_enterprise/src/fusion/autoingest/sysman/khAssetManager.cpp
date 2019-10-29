@@ -22,6 +22,7 @@ Description:
 #include "khAssetManager.h"
 
 #include "common/khnet/SocketException.h"
+#include "fusion/autoingest/sysman/AssetOperation.h"
 #include "fusion/autoingest/sysman/khSystemManager.h"
 #include "fusion/autoingest/sysman/khResourceManager.h"
 #include "fusion/autoingest/sysman/plugins/RasterProductAssetD.h"
@@ -109,8 +110,8 @@ khAssetManager::ApplyPending(void)
 
   notify(NFY_INFO, "Asset cache size = %d", Asset::CacheSize());
   notify(NFY_INFO, "Version cache size = %d", AssetVersion::CacheSize());
-  notify(NFY_INFO, "Total memory used by asset cache = %lu B", Asset::CacheMemoryUse());
-  notify(NFY_INFO, "Total memory used by version cache = %lu B", AssetVersion::CacheMemoryUse());
+  notify(NFY_INFO, "Approx. memory used by asset cache = %lu B", Asset::CacheMemoryUse());
+  notify(NFY_INFO, "Approx. memory used by version cache = %lu B", AssetVersion::CacheMemoryUse());
 
 #ifndef SKIP_SAVE
 
@@ -754,7 +755,7 @@ khAssetManager::RebuildVersion(const std::string &verref)
 {
   assert(!mutex.TryLock());
   notify(NFY_INFO, "RebuildVersion %s", verref.c_str());
-  MutableAssetVersionD(verref)->Rebuild();
+  ::RebuildVersion(verref);
 }
 
 void
@@ -989,9 +990,12 @@ khAssetManager::MercatorMapDatabaseModify(const MapDatabaseEditRequest &req) {
 
 void
 khAssetManager::GetCurrTasks(const std::string &dummy, TaskLists &ret) {
-  assert(!mutex.TryLock());
+  uint mutexWaitTime = MiscConfig::Instance().MutexTimedWaitSec;
+
+  // Passing in a timeout will throw khTimedMutexException if mutexWaitTime is
+  // exceeded trying to acquire the lock. 
   notify(NFY_INFO, "GetCurrTasks");
-  khLockGuard lock(theResourceManager.mutex);
+  khLockGuard timedLock(theResourceManager.mutex, mutexWaitTime);
   theResourceManager.GetCurrTasks(ret);
 }
 
@@ -1221,12 +1225,8 @@ std::string khAssetManager::PublishDatabase(
 }
 
 std::string khAssetManager::RetrieveTasking(const FusionConnection::RecvPacket& msg) {
-  uint mutexWaitTime = MiscConfig::Instance().MutexTimedWaitSec;
-
   std::string replyPayload;
   try {
-    // will throw an exception if mutexWaitTime is exceeded trying to acquire the lock
-    khLockGuard timedLock(mutex, mutexWaitTime);
     TaskLists ret;
     std::string dummy;
     GetCurrTasks(dummy, ret);
