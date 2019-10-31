@@ -54,96 +54,6 @@ const std::map<uint32, std::string> vTypeNames = {
   {TYPE_POLYGONPACKET, "TYPE_POLYGONPACKET"}
 };
 
-struct etPattern
-{
-    /*The purpose of this structure is uncertain, but it exists at the beginning of
-    each string buffer and must be skipped past to find the string data.*/
-  int signature;
-  unsigned short length;
-  unsigned short width;
-};
- 
-struct PacketHeader {
-  uint32_t keyholeMagic;        // must be 32301 or the packet is not valid
-  uint32_t dataTypeId;          // identifies the type of vector data (defines found in packet.h)
-  uint32_t packetFormatVersion;
-  uint32_t numInstances;
-  uint32_t dataInstanceSize;
-  uint32_t dataBufferOffset;
-  uint32_t dataBufferSize;
-  uint32_t metaBufferSize;
-};
- 
-struct ChildDataPacket {
-    PacketHeader header; 
-    uint32_t metaHeader_OFFSET;
-    uint32_t packetBuffer_OFFSET;
-    int packetBufferSize;
-    uint32_t dataInstances_OFFSET;
-    uint32_t dataBuffer_OFFSET;
-    int maxDataBufferSize;
-};
- 
-struct ParentPacket{
-    PacketHeader header;
-    // The size of dataInstancesAndDataBuffer is
-    //      header.dataBufferSize + (header.numInstances * header.dataInstanceSize)
-    // The data instances start at &dataInstancesAndDataBuffer[0] and are of
-    //      type ChildDataPacket.
-    // The data buffer starts at &dataInstancesAndDataBuffer[header.numInstances + header.dataInstanceSize]
-    char dataInstancesAndDataBuffer[];
-};
- 
-/*
-* The following structures will be found as Data Instances for
-* child packets. Structures for the other packet types can be
-* found in packet.h.
-* NOTE: The structures that end in _BASE32 in packet.h are generally
-* easier to use to determine the structure of packet data.
-*/
-struct StreetPacketData {
-  uint32_t      name;
-  int           textId_deprecated;
-  uint16_t      numPt;
-  uint16_t      bitFlags;
-  uint32_t      localPt;
-  int           style;
-};
- 
-struct PolygonPacketData {
-    uint32_t    name;
-    int         reserved1;
-    uint16_t    numPt;
-    uint16_t    bitFlags;
-    uint16_t    numEdgeFlags;
-    uint32_t    localPt;
-    uint32_t    edgeFlags;
-    int         style;
-};
-
-struct LandmarkPacketData {
-  uint32_t      name;
-  uint16_t      numPt;
-  uint16_t      bitFlags;
-  uint32_t      localPt;
-  uint32_t      iconName_deprecated;
-  int           style;
-  uint32_t      description;
-  int           referenceType;
-  uint32_t      reference;
-  int           referenceSize;
-};
-
- 
-/*
-* This structure represents a single point in a vector and is found in most
-* types of packet data structures.
-*/
-struct etVec3d
-{
-  double elem[3];
-};
-
 // Calculate the x and y coordinates for the given btree (quadtree)
 // and level. The btree is a 48-bit representation of up to a
 // 24-level address. It is filled from the high bits down. The
@@ -337,36 +247,41 @@ void printVectorPacket(const LittleEndianReadBuffer& buffer, std::ostringstream&
 
   printVectorPacketCommon(buffer, s);
 
-  const ParentPacket *pParentPacket = (ParentPacket*)buffer.data();
+  etDrawablePacket drawablePacket;
+  drawablePacket.load((char*)buffer.data(), (int)buffer.size());
 
-  // Data instances in the parent packet come directly after the header
-  const char *pParentDataInstances = &pParentPacket->dataInstancesAndDataBuffer[0];
-  // The data buffer in the parent packet comes directly after the data instances
-  const char *pParentDataBuffer = &pParentPacket->dataInstancesAndDataBuffer[pParentPacket->header.numInstances*pParentPacket->header.dataInstanceSize];
+  const char *pPacketDataBuffer = buffer.data() + drawablePacket.packetHeader.dataBufferOffset;
 
-  s << "pParentPacket->header.numInstances = " << pParentPacket->header.numInstances << std::endl;
+  s << "pParentPacket->header.numInstances = " << drawablePacket.packetHeader.numInstances << std::endl;
   s << std::endl;
 
-  for(uint32_t idx = 0; idx < pParentPacket->header.numInstances; idx++){
-    ChildDataPacket *pChildPacket = (ChildDataPacket*)(pParentDataInstances + (pParentPacket->header.dataInstanceSize*idx));
+  for(uint32_t idx = 0; idx < drawablePacket.packetHeader.numInstances; idx++){
+    //etDataPacket *pChildPacket = (etDataPacket*)drawablePacket.getDataInstanceP(idx);
+    const etDataPacket *pChildPacket = drawablePacket.getPtr(idx);
+    //const char *pChildPacketDataBuffer = buffer.data() + pChildPacket->dataBuffer_OFFSET;
 
     s << "ChildDataPacket " << idx << ":" << std::endl;
+
+    // std::cout << "pChildPacket->dataBuffer_OFFSET = " << pChildPacket->dataBuffer_OFFSET << std::endl;
+    // std::cout << "original forumla value = pPacketDataBuffer + = " << 
+    //                             (pChildPacket->packetHeader.dataBufferOffset +
+    //                             pChildPacket->dataBuffer_OFFSET) << std::endl;
 
     // To get the location of the child packet's data buffer, first add
     // pChildPacket->header.dataBufferOffset to find the area of the parent
     // packet's data buffer that is allocated for the child. Then, add
     // to that pChildPacket->dataBuffer_OFFSET.
-    const char *pChildPacketDataBuffer = pParentDataBuffer +
-                                pChildPacket->header.dataBufferOffset +
+    const char *pChildPacketDataBuffer = pPacketDataBuffer +
+                                pChildPacket->packetHeader.dataBufferOffset +
                                 pChildPacket->dataBuffer_OFFSET;
 
-    s << "  header.numInstances = " << pChildPacket->header.numInstances << std::endl;
+    s << "  header.numInstances = " << pChildPacket->packetHeader.numInstances << std::endl;
 
-    for(uint32_t instance_idx = 0; instance_idx < pChildPacket->header.numInstances; instance_idx++){
+    for(uint32_t instance_idx = 0; instance_idx < pChildPacket->packetHeader.numInstances; instance_idx++){
 
       s << "    Instance " << instance_idx << ":" << std::endl;
 
-      const auto typeNameIter = vTypeNames.find(pChildPacket->header.dataTypeId);
+      const auto typeNameIter = vTypeNames.find(pChildPacket->packetHeader.dataTypeID);
       std::string vectorDataType = "unknown";
       if (typeNameIter != vTypeNames.end()) {
         vectorDataType = typeNameIter->second;
@@ -374,17 +289,18 @@ void printVectorPacket(const LittleEndianReadBuffer& buffer, std::ostringstream&
 
       s << "      header.dataTypeId: " << vectorDataType << std::endl;
 
-      if (pChildPacket->header.dataTypeId == TYPE_STREETPACKET_UTF8) {
+      if (pChildPacket->packetHeader.dataTypeID == TYPE_STREETPACKET_UTF8) {
         // To get the location of the child packet's data instances area,
         // first add pChildPacket->header.dataBufferOffset to find
         // the area of the parent packet's data buffer that is allocated for
         // the child. Add pChildPacket->dataInstances_OFFSET to that to locate
         // where the data instances start.
-        StreetPacketData *pInstance =
-            (StreetPacketData*)(pParentDataBuffer + pChildPacket->header.dataBufferOffset +
+        //etStreetPacketData *pInstance = static_cast<etStreetPacketData *>(pChildPacket->getDataInstanceP(instance_idx));
+        etStreetPacketData *pInstance =
+            (etStreetPacketData*)(pPacketDataBuffer + pChildPacket->packetHeader.dataBufferOffset +
                                 pChildPacket->dataInstances_OFFSET +
-                                pChildPacket->header.dataInstanceSize*instance_idx);
-        const char *name = pChildPacketDataBuffer + pInstance->name + sizeof(etPattern);
+                                pChildPacket->packetHeader.dataInstanceSize*instance_idx);
+        const char *name = pChildPacketDataBuffer + pInstance->name_OFFSET + sizeof(etPattern);
 
         s << "      name: " << name << std::endl;
         s << "      style: " << pInstance->style << std::endl;
@@ -394,12 +310,12 @@ void printVectorPacket(const LittleEndianReadBuffer& buffer, std::ostringstream&
         // To convert the x and y in these points to lon,lat multiply the x and y
         // values (elem[0] and elem[1]) by 180.0.
         //etVec3d *pPoints = (etVec3d*)(pChildPacketDataBuffer + pInstance->localPt);
-      } else if (pChildPacket->header.dataTypeId == TYPE_POLYGONPACKET){
-        PolygonPacketData *pInstance =
-            (PolygonPacketData*)(pParentDataBuffer + pChildPacket->header.dataBufferOffset +
+      } else if (pChildPacket->packetHeader.dataTypeID == TYPE_POLYGONPACKET){
+        etPolygonPacketData *pInstance =
+            (etPolygonPacketData*)(pPacketDataBuffer + pChildPacket->packetHeader.dataBufferOffset +
                                 pChildPacket->dataInstances_OFFSET +
-                                pChildPacket->header.dataInstanceSize*instance_idx);                                           
-        const char *name = pChildPacketDataBuffer + pInstance->name + sizeof(etPattern);
+                                pChildPacket->packetHeader.dataInstanceSize*instance_idx);                                           
+        const char *name = pChildPacketDataBuffer + pInstance->name_OFFSET + sizeof(etPattern);
 
         s << "      name: " << name << std::endl;
         s << "      style: " << pInstance->style << std::endl;
@@ -410,17 +326,18 @@ void printVectorPacket(const LittleEndianReadBuffer& buffer, std::ostringstream&
         // values (elem[0] and elem[1]) by 180.0.
         //etVec3d *pPoints = (etVec3d*)(pChildPacketDataBuffer + pInstance->localPt);
         //bool *pEdgeFlags = (bool*)(pChildPacketDataBuffer + pInstance->edgeFlags);
-      } else if (pChildPacket->header.dataTypeId == TYPE_LANDMARK) {
-        LandmarkPacketData *pInstance =
-            (LandmarkPacketData*)(pParentDataBuffer + pChildPacket->header.dataBufferOffset +
+      } else if (pChildPacket->packetHeader.dataTypeID == TYPE_LANDMARK) {
+        //etLandmarkPacketData *pInstance = static_cast<etLandmarkPacketData *>(pChildPacket->getDataInstanceP(instance_idx));
+        etLandmarkPacketData *pInstance =
+            (etLandmarkPacketData*)(pPacketDataBuffer + pChildPacket->packetHeader.dataBufferOffset +
                                 pChildPacket->dataInstances_OFFSET +
-                                pChildPacket->header.dataInstanceSize*instance_idx);                                           
-        const char *name_str = pChildPacketDataBuffer + pInstance->name + sizeof(etPattern);
-        const char *desc_str = pChildPacketDataBuffer + pInstance->description + sizeof(etPattern);
+                                pChildPacket->packetHeader.dataInstanceSize*instance_idx);                                           
+        const char *name_str = pChildPacketDataBuffer + pInstance->name_OFFSET + sizeof(etPattern);
+        const char *desc_str = pChildPacketDataBuffer + pInstance->description_OFFSET + sizeof(etPattern);
 
-        s << "      pInstance->name: " << pInstance->name << std::endl;
+        //s << "      pInstance->name: " << pInstance->name << std::endl;
         s << "      name_str: " << name_str << std::endl;
-        s << "      pInstance->description: " << pInstance->description << std::endl;
+        //s << "      pInstance->description: " << pInstance->description << std::endl;
         s << "      desc_str: " << desc_str << std::endl;
         s << "      style: " << pInstance->style << std::endl;
         s << "      numPt: " << pInstance->numPt << std::endl;
