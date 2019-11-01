@@ -23,6 +23,7 @@
 #include <map>
 #include <sstream>  // NOLINT(readability/streams)
 #include <string>
+#include <iomanip>
 #include "common/etencoder.h"
 #include "common/khAbortedException.h"
 #include "common/khFileUtils.h"
@@ -162,6 +163,22 @@ bool getPackageFileLocs(GlcUnpacker* const unpacker,
   return true;
 }
 
+void printVectorPacketBitFlags(const ushort bitFlags, std::ostringstream& s) {
+  s << "      bitFlags: 0x" << std::hex << bitFlags << std::dec << " (";
+  
+  if ((bitFlags & 0x01) == 0x01) {
+    s << "Relative";
+  } else if ((bitFlags & 0x02) == 0x02) {
+    s << "Absolute";
+  } else {
+    s << "Clamp to ground";
+  }
+  if ((bitFlags & 0x04) == 0x04) {
+    s << ", Extrude";
+  }
+  s << ")" << std::endl;
+}
+
 void printVectorPacket(const LittleEndianReadBuffer& buffer, std::ostringstream& s) {
 
   etDrawablePacket drawablePacket;
@@ -169,13 +186,15 @@ void printVectorPacket(const LittleEndianReadBuffer& buffer, std::ostringstream&
 
   const char *pPacketDataBuffer = buffer.data() + drawablePacket.packetHeader.dataBufferOffset;
 
+  const int floatPrecision = 12;
+
   const auto typeNameIter = vTypeNames.find(drawablePacket.packetHeader.dataTypeID);
   std::string vectorDataType = "UNKNOWN";
   if (typeNameIter != vTypeNames.end()) {
     vectorDataType = typeNameIter->second;
   }
 
-  s << "etPacketHeader fields:" << std::endl;
+  s << "etDrawablePacket.packetHeader fields:" << std::endl;
   s << "  dataBufferOffset = " << drawablePacket.packetHeader.dataBufferOffset << std::endl;
   s << "  dataBufferSize = " << drawablePacket.packetHeader.dataBufferSize << std::endl;
   s << "  dataInstanceSize = " << drawablePacket.packetHeader.dataInstanceSize << std::endl;
@@ -187,9 +206,6 @@ void printVectorPacket(const LittleEndianReadBuffer& buffer, std::ostringstream&
   s << "  version = " << drawablePacket.packetHeader.version << std::endl;
   s << std::endl;
 
-  s << "pParentPacket->header.numInstances = " << drawablePacket.packetHeader.numInstances << std::endl;
-  s << std::endl;
-
   for(uint32_t idx = 0; idx < drawablePacket.packetHeader.numInstances; idx++){
     const etDataPacket *pChildPacket = drawablePacket.getPtr(idx);
     const char *pChildPacketDataBuffer = pPacketDataBuffer +
@@ -197,7 +213,7 @@ void printVectorPacket(const LittleEndianReadBuffer& buffer, std::ostringstream&
                                 pChildPacket->dataBuffer_OFFSET;
 
     s << "ChildDataPacket " << idx << ":" << std::endl;
-    s << "  header.numInstances = " << pChildPacket->packetHeader.numInstances << std::endl;
+    s << "  packetHeader.numInstances = " << pChildPacket->packetHeader.numInstances << std::endl;
 
     for(uint32_t instance_idx = 0; instance_idx < pChildPacket->packetHeader.numInstances; instance_idx++){
 
@@ -209,67 +225,117 @@ void printVectorPacket(const LittleEndianReadBuffer& buffer, std::ostringstream&
         vectorDataType = typeNameIter->second;
       }
 
-      s << "      header.dataTypeId: " << vectorDataType << std::endl;
+      s << "      packetHeader.dataTypeID: " << vectorDataType << std::endl;
+
+      const char* pVectorPacketDataLocation = pPacketDataBuffer 
+            + pChildPacket->packetHeader.dataBufferOffset 
+            + pChildPacket->dataInstances_OFFSET 
+            + pChildPacket->packetHeader.dataInstanceSize*instance_idx;
 
       if (pChildPacket->packetHeader.dataTypeID == TYPE_STREETPACKET_UTF8) {
-        const etStreetPacketData *pStreetPacketData =
-          reinterpret_cast<const etStreetPacketData*>(
-            pPacketDataBuffer 
-            + pChildPacket->packetHeader.dataBufferOffset 
-            + pChildPacket->dataInstances_OFFSET 
-            + pChildPacket->packetHeader.dataInstanceSize*instance_idx);
-        const char *name = pChildPacketDataBuffer + pStreetPacketData->name_OFFSET + sizeof(etPattern);
+        const etStreetPacketData *pVectorPacketData =
+          reinterpret_cast<const etStreetPacketData*>(pVectorPacketDataLocation);
 
-        s << "      name: " << name << std::endl;
-        s << "      style: " << pStreetPacketData->style << std::endl;
-        s << "      numPt: " << pStreetPacketData->numPt << std::endl;
+        const char *name_str = 
+          pChildPacketDataBuffer + pVectorPacketData->name_OFFSET + sizeof(etPattern);
 
-        //etVec3d *pPoints = (etVec3d*)(pChildPacketDataBuffer + pInstance->localPt);
-      } else if (pChildPacket->packetHeader.dataTypeID == TYPE_POLYLINEPACKET) {
-        const etPolyLinePacketData *pPolyLinePacketData =
-          reinterpret_cast<const etPolyLinePacketData*>(
-            pPacketDataBuffer 
-            + pChildPacket->packetHeader.dataBufferOffset 
-            + pChildPacket->dataInstances_OFFSET 
-            + pChildPacket->packetHeader.dataInstanceSize*instance_idx);
-        const char *name = pChildPacketDataBuffer + pPolyLinePacketData->name_OFFSET + sizeof(etPattern);
-
-        s << "      name: " << name << std::endl;
-        s << "      style: " << pPolyLinePacketData->style << std::endl;
-        s << "      numPt: " << pPolyLinePacketData->numPt << std::endl;
-
-        //etVec3d *pPoints = (etVec3d*)(pChildPacketDataBuffer + pInstance->localPt);
-      } else if (pChildPacket->packetHeader.dataTypeID == TYPE_POLYGONPACKET){
-        const etPolygonPacketData *pPolygonPacketData =
-          reinterpret_cast<const etPolygonPacketData*>(
-            pPacketDataBuffer 
-            + pChildPacket->packetHeader.dataBufferOffset 
-            + pChildPacket->dataInstances_OFFSET 
-            + pChildPacket->packetHeader.dataInstanceSize*instance_idx);
-        const char *name = pChildPacketDataBuffer + pPolygonPacketData->name_OFFSET + sizeof(etPattern);
-
-        s << "      name: " << name << std::endl;
-        s << "      style: " << pPolygonPacketData->style << std::endl;
-        s << "      numPt: " << pPolygonPacketData->numPt << std::endl;
-
-        //etVec3d *pPoints = (etVec3d*)(pChildPacketDataBuffer + pInstance->localPt);
-        //bool *pEdgeFlags = (bool*)(pChildPacketDataBuffer + pInstance->edgeFlags);
-      } else if (pChildPacket->packetHeader.dataTypeID == TYPE_LANDMARK) {
-        const etLandmarkPacketData *pLandmarkPacketData =
-          reinterpret_cast<const etLandmarkPacketData*>(
-            pPacketDataBuffer 
-            + pChildPacket->packetHeader.dataBufferOffset 
-            + pChildPacket->dataInstances_OFFSET 
-            + pChildPacket->packetHeader.dataInstanceSize*instance_idx);
-        const char *name_str = pChildPacketDataBuffer + pLandmarkPacketData->name_OFFSET + sizeof(etPattern);
-        const char *desc_str = pChildPacketDataBuffer + pLandmarkPacketData->description_OFFSET + sizeof(etPattern);
-
-        //s << "      pInstance->name: " << pInstance->name << std::endl;
         s << "      name_str: " << name_str << std::endl;
-        //s << "      pInstance->description: " << pInstance->description << std::endl;
+        s << "      style: " << pVectorPacketData->style << std::endl;
+        s << "      numPt: " << pVectorPacketData->numPt << std::endl;
+        printVectorPacketBitFlags(pVectorPacketData->bitFlags, s);
+
+        const etVec3d* pPoints = reinterpret_cast<const etVec3d*>
+          (pChildPacketDataBuffer + pVectorPacketData->localPt_OFFSET);
+
+        s << "      points: (longitude * 180, latitude * 180, altitude (raw))" << std::endl;
+        s << std::setprecision(floatPrecision);
+
+        for (int a = 0; a < pVectorPacketData->numPt; a++, pPoints++) {
+          s << "        " << pPoints->elem[0] * 180.0
+            << ", " << pPoints->elem[1] * 180.0
+            << ", " << pPoints->elem[2] 
+            << std::endl;
+        }
+      } else if (pChildPacket->packetHeader.dataTypeID == TYPE_POLYLINEPACKET) {
+        const etPolyLinePacketData *pVectorPacketData =
+          reinterpret_cast<const etPolyLinePacketData*>(pVectorPacketDataLocation);
+
+        const char *name_str = 
+          pChildPacketDataBuffer + pVectorPacketData->name_OFFSET + sizeof(etPattern);
+
+        s << "      name_str: " << name_str << std::endl;
+        s << "      style: " << pVectorPacketData->style << std::endl;
+        s << "      numPt: " << pVectorPacketData->numPt << std::endl;
+        printVectorPacketBitFlags(pVectorPacketData->bitFlags, s);
+
+        const etVec3d* pPoints = reinterpret_cast<const etVec3d*>
+          (pChildPacketDataBuffer + pVectorPacketData->localPt_OFFSET);
+
+        s << "      points: (longitude * 180, latitude * 180, altitude (raw))" << std::endl;
+        s << std::setprecision(floatPrecision);
+
+        for (int a = 0; a < pVectorPacketData->numPt; a++, pPoints++) {
+          s << "        " << pPoints->elem[0] * 180.0
+            << ", " << pPoints->elem[1] * 180.0
+            << ", " << pPoints->elem[2] 
+            << std::endl;
+        }
+      } else if (pChildPacket->packetHeader.dataTypeID == TYPE_POLYGONPACKET){
+        const etPolygonPacketData *pVectorPacketData =
+          reinterpret_cast<const etPolygonPacketData*>(pVectorPacketDataLocation);
+
+        const char *name_str = 
+          pChildPacketDataBuffer + pVectorPacketData->name_OFFSET + sizeof(etPattern);
+
+        s << "      name_str: " << name_str << std::endl;
+        s << "      style: " << pVectorPacketData->style << std::endl;
+        s << "      numPt: " << pVectorPacketData->numPt << std::endl;
+        s << "      numEdgeFlags: " << pVectorPacketData->numEdgeFlags << std::endl;
+        printVectorPacketBitFlags(pVectorPacketData->bitFlags, s);
+
+        const etVec3d* pPoints = reinterpret_cast<const etVec3d*>
+          (pChildPacketDataBuffer + pVectorPacketData->localPt_OFFSET);
+        const bool* pEdgeFlags = reinterpret_cast<const bool*>
+          (pChildPacketDataBuffer + pVectorPacketData->edgeFlags_OFFSET);
+
+        s << "      points: (longitude * 180, latitude * 180, altitude (raw), edgeFlag)" << std::endl;
+        s << std::setprecision(floatPrecision);
+
+        if (pVectorPacketData->numPt == pVectorPacketData->numEdgeFlags) {
+          for (int a = 0; a < pVectorPacketData->numPt; a++, pPoints++, pEdgeFlags++) {
+            s << "        " << pPoints->elem[0] * 180.0
+              << ", " << pPoints->elem[1] * 180.0
+              << ", " << pPoints->elem[2]
+              << ", " << ((*pEdgeFlags) ? "true" : "false") 
+              << std::endl;
+          }
+        } else {
+          s << "NOT ENUMERATING BECAUSE NUMBER OF POINTS != NUMBER OF EDGE FLAGS" << std::endl;
+        }
+      } else if (pChildPacket->packetHeader.dataTypeID == TYPE_LANDMARK) {
+        const etLandmarkPacketData *pVectorPacketData =
+          reinterpret_cast<const etLandmarkPacketData*>(pVectorPacketDataLocation);
+
+        const char *name_str =
+          pChildPacketDataBuffer + pVectorPacketData->name_OFFSET + sizeof(etPattern);
+        const char *desc_str =
+          pChildPacketDataBuffer + pVectorPacketData->description_OFFSET + sizeof(etPattern);
+
+        s << "      name_str: " << name_str << std::endl;
         s << "      desc_str: " << desc_str << std::endl;
-        s << "      style: " << pLandmarkPacketData->style << std::endl;
-        s << "      numPt: " << pLandmarkPacketData->numPt << std::endl;
+        s << "      style: " << pVectorPacketData->style << std::endl;
+        s << "      numPt: " << pVectorPacketData->numPt << std::endl;
+        printVectorPacketBitFlags(pVectorPacketData->bitFlags, s);
+
+        const etVec3d *vecPoint = 
+          reinterpret_cast<const etVec3d*>(
+            pChildPacketDataBuffer + pVectorPacketData->localPt_OFFSET);
+
+        s << "      point:" << std::endl;
+        s << std::setprecision(floatPrecision);
+        s << "        longitude * 180: " << vecPoint->elem[0] * 180.0 << std::endl;
+        s << "        latitude * 180: " << vecPoint->elem[1] * 180.0 << std::endl;
+        s << "        altitude (raw): " << vecPoint->elem[2] << std::endl;
       } else {
         s << "      NEED TO ADD HANDLING FOR THIS TYPE" << std::endl;
       }
@@ -329,8 +395,6 @@ void extractAllPackets(GlcUnpacker* const unpacker,
       if (index_item.packet_size >= max_size) {
         std::cout << "Data item is too big: " << i
                   << " size: " << index_item.packet_size << std::endl;
-     } else if (index_item.channel == 0) {
-       //std::cout << "skipping channel " << index_item.channel << std::endl;
      } else if (reader->ReadData(
           &buffer[0], data_offset, index_item.packet_size)) {
         if (unpacker->Is2d()) {
@@ -383,7 +447,7 @@ void extractAllPackets(GlcUnpacker* const unpacker,
              (decompressed.size() >= sizeof(uint32)*2)) {
             std::ostringstream s;
             printVectorPacket(decompressed, s);
-            writePacketToFile(index_item, s.str(), false, "globetiles", "_vector_drawable"); // TODO: Remove hard-coded "_drawable".
+            writePacketToFile(index_item, s.str(), false, "globetiles", "_vector");
           }
         }
         else {
