@@ -43,18 +43,6 @@
 
 namespace {
 
-const std::map<uint32, std::string> vTypeNames = {
-  {TYPE_STREETPACKET, "TYPE_STREETPACKET"},
-  {TYPE_SITEPACKET, "TYPE_SITEPACKET"},
-  {TYPE_DRAWABLEPACKET, "TYPE_DRAWABLEPACKET"},
-  {TYPE_POLYLINEPACKET, "TYPE_POLYLINEPACKET"},
-  {TYPE_AREAPACKET, "TYPE_AREAPACKET"},
-  {TYPE_STREETPACKET_UTF8, "TYPE_STREETPACKET_UTF8"},
-  {TYPE_SITEPACKET_UTF8, "TYPE_SITEPACKET_UTF8"},
-  {TYPE_LANDMARK, "TYPE_LANDMARK"},
-  {TYPE_POLYGONPACKET, "TYPE_POLYGONPACKET"}
-};
-
 // Calculate the x and y coordinates for the given btree (quadtree)
 // and level. The btree is a 48-bit representation of up to a
 // 24-level address. It is filled from the high bits down. The
@@ -180,6 +168,18 @@ void printVectorPacketBitFlags(const ushort bitFlags, std::ostringstream& s) {
 }
 
 void printVectorPacket(const LittleEndianReadBuffer& buffer, std::ostringstream& s) {
+
+  const std::map<uint32, std::string> vTypeNames = {
+    {TYPE_STREETPACKET, "TYPE_STREETPACKET"},
+    {TYPE_SITEPACKET, "TYPE_SITEPACKET"},
+    {TYPE_DRAWABLEPACKET, "TYPE_DRAWABLEPACKET"},
+    {TYPE_POLYLINEPACKET, "TYPE_POLYLINEPACKET"},
+    {TYPE_AREAPACKET, "TYPE_AREAPACKET"},
+    {TYPE_STREETPACKET_UTF8, "TYPE_STREETPACKET_UTF8"},
+    {TYPE_SITEPACKET_UTF8, "TYPE_SITEPACKET_UTF8"},
+    {TYPE_LANDMARK, "TYPE_LANDMARK"},
+    {TYPE_POLYGONPACKET, "TYPE_POLYGONPACKET"}
+  };
 
   etDrawablePacket drawablePacket;
   drawablePacket.load((char*)buffer.data(), (int)buffer.size());
