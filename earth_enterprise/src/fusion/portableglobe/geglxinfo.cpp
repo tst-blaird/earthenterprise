@@ -395,7 +395,7 @@ void extractAllPackets(GlcUnpacker* const unpacker,
       if (index_item.packet_size >= max_size) {
         std::cout << "Data item is too big: " << i
                   << " size: " << index_item.packet_size << std::endl;
-     } else if (reader->ReadData(
+      } else if (reader->ReadData(
           &buffer[0], data_offset, index_item.packet_size)) {
         if (unpacker->Is2d()) {
           writePacketToFile(index_item, buffer, true, "maptiles", "");
