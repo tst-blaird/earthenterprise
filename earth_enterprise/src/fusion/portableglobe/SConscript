@@ -117,8 +117,9 @@ gekmlgrabber = env.executable('gekmlgrabber',
                                     'gecommon', 'geutil'])
 
 gegetpacket = env.executable('gegetpacket',
-                              ['gegetpacket.cpp'],
-                              LIBS=['gesimpleearthstream', 'qtutils', 'gecommon', 'geutil', 'curl'])
+                              ['gegetpacket.cpp', 'getpacket_map.cpp', 'getpacket_globe.cpp'],
+                              LIBS=['gesimpleearthstream', 'qtutils', 'gecommon', 
+                                    'geutil', 'curl', 'geprotobuf', 'gedbroot'])
 
 polygontoqtnodes = env.StaticObject('polygontoqtnodes.cpp')
 
