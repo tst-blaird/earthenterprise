@@ -226,7 +226,7 @@ void ParseServerDefs(const std::string& json, std::vector<std::unique_ptr<LayerI
 bool processMapRequest(
     gstSimpleEarthStream &ses, 
     std::string &raw_packet,
-    const std::string server,
+    const std::string &server,
     const int row,
     const int col,
     const int level) {

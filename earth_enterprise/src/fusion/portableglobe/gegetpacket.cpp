@@ -27,7 +27,7 @@
 bool processMapRequest(
     gstSimpleEarthStream &ses, 
     std::string &raw_packet,
-    const std::string server,
+    const std::string &server,
     const int row,
     const int col,
     const int level);
@@ -35,20 +35,26 @@ bool processMapRequest(
 bool processGlobeRequest(
     gstSimpleEarthStream &ses, 
     std::string &raw_packet,
-    const std::string server,
+    const std::string &server,
     const int row,
     const int col,
     const int level);
 
+bool processGlobeRequest(
+    gstSimpleEarthStream &ses, 
+    std::string &raw_packet,
+    const std::string &server,
+    const std::string &qt_address);
+
 namespace {
   bool help = false;
-  int row;
-  int col;
-  int level;
+  int row = 0;
+  int col = 0;
+  int level = 0;
+  std::string qt_address;
   std::string output;
   std::string server;
-  std::string tile_db_version = "0";
-  bool geemap = false;
+  std::string tile_db_version = "1";
 }
 
 void usage(const std::string &progn, const char *msg = 0, ...) {
@@ -61,14 +67,18 @@ void usage(const std::string &progn, const char *msg = 0, ...) {
   }
 
   fprintf(stderr,
-          "usage: %s --output=/tmp/output --server=http://gee-server/database --row=y --col=x --level=z"
+          "usage: %s --output=/tmp/output --server=http://gee-server/database ((--row=y --col=x --level=z) || --qt_address=<quadtree-address>)"
           "\nRequired:\n"
           "   --output: Directory where local kml files are to\n"
           "                       be stored.\n"
           "   --server:           Server and database to request from.\n"
+          "\n"
           "   --row:              Row to retrieve tile from.\n"
           "   --col:              Column to retrieve tile from.\n"
           "   --level:            Zoom level to retrieve tile from.\n"
+          "  or\n"
+          "   --qt_address:       Quadtree address to retrieve tile from.\n"
+          "                       The string should contain the leading 0.\n"
           //" Options:\n"
           , progn.c_str());
   exit(1);
@@ -80,15 +90,16 @@ int main(int argc, char *argv[]) {
   khGetopt options;
   options.flagOpt("help", help);
   options.flagOpt("?", help);
-  options.flagOpt("map", geemap);
   options.opt("row", row);
   options.opt("col", col);
   options.opt("level", level);
   options.opt("output", output);
   options.opt("tile_db_version", tile_db_version);
   options.opt("server", server);
+  options.opt("qt_address", qt_address);
 
-  std::set<std::string> required = {"server", "output", "row", "col", "level"};
+  //std::set<std::string> required = {"server", "output", "row", "col", "level"};
+  std::set<std::string> required = {"server", "output"};
   options.setRequired(required);
 
   int argn;
@@ -101,6 +112,26 @@ int main(int argc, char *argv[]) {
 
   std::cout << "output = \"" << output << "\"" << std::endl;
   std::cout << "server = \"" << server << "\"" << std::endl;
+  std::cout << "row = " << row << std::endl;
+  std::cout << "col = " << col << std::endl;
+  std::cout << "level = " << level << std::endl;
+  std::cout << "qt_address = \"" << qt_address << "\"" << std::endl;
+
+  if (row == 0 && col == 0 && level == 0 && qt_address.length() == 0) {
+    std::cout << "Row, col, and level are all 0 and quadtree address is empty." << std::endl;
+    return -1;
+  }
+
+  if ((row != 0 || col != 0 || level != 0) && qt_address.length() != 0) {
+    std::cout << "At least one of row, col, and level are non-zero and quadtree address is not empty." << std::endl;
+    std::cout << "Please only supply row, col, and level OR qt_address on the command line." << std::endl;
+    return -2;
+  }
+
+  // if (geemap && row == 0 && col == 0 && level == 0) {
+  //   std::cout << "Row, col, and level must be supplied when targeting a map." << std::endl;
+  //   return -3;
+  // }
 
   gstSimpleEarthStream::Init();
 
@@ -108,10 +139,15 @@ int main(int argc, char *argv[]) {
   std::string raw_packet;
   bool got_packet = false;
 
-  if (geemap) {
-    got_packet = processMapRequest(ses, raw_packet, server, row, col, level);
-  } else {
-    got_packet = processGlobeRequest(ses, raw_packet, server, row, col, level);
+  // if (geemap) {
+  //   got_packet = processMapRequest(ses, raw_packet, server, row, col, level);
+  // } else 
+  {
+    if (qt_address.length() != 0) {
+      got_packet = processGlobeRequest(ses, raw_packet, server, qt_address);
+    } else {
+      got_packet = processGlobeRequest(ses, raw_packet, server, row, col, level);
+    }
   }
 
   if (got_packet) {
