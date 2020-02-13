@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "gegetpacket.h"
+
 #include <iostream>  // NOLINT(readability/streams)
 #include <sstream>
 #include <memory>
@@ -223,7 +225,7 @@ void ParseServerDefs(const std::string& json, std::vector<std::unique_ptr<LayerI
   }
 }
 
-bool processMapRequest(
+GEGETPACKET_ERROR processMapRequest(
     gstSimpleEarthStream &ses, 
     std::string &raw_packet,
     const std::string &server,
@@ -242,7 +244,8 @@ bool processMapRequest(
 
   std::cout << "url = \"" << url << "\"" << std::endl;
   if (!ses.GetRawPacket(url, &raw_packet, false)) {
-    return false;
+    // Can we do a better job of determining the error?
+    return GEGETPACKET_WRONG_DB_TYPE;
   }
 
   // The geeServerDefs raw packet is a JSON string.
@@ -261,5 +264,6 @@ bool processMapRequest(
 
   url = ss.str();
   std::cout << "url = \"" << url << "\"" << std::endl;
-  return ses.GetRawPacket(url, &raw_packet, false);
+
+  return (ses.GetRawPacket(url, &raw_packet, false) ? GEGETPACKET_SUCCESS : GEGETPACKET_PACKET_NOT_FOUND);
 }

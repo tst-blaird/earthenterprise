@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "gegetpacket.h"
+
 #include <khGetopt.h>
 #include <fstream>   // NOLINT(readability/streams)
 #include <iostream>  // NOLINT(readability/streams)
@@ -24,7 +26,7 @@
 #include "fusion/gst/gstSimpleEarthStream.h"
 #include "fusion/portableglobe/shared/packetbundle.h"
 
-bool processMapRequest(
+GEGETPACKET_ERROR processMapRequest(
     gstSimpleEarthStream &ses, 
     std::string &raw_packet,
     const std::string &server,
@@ -32,7 +34,7 @@ bool processMapRequest(
     const int col,
     const int level);
 
-bool processGlobeRequest(
+GEGETPACKET_ERROR processGlobeRequest(
     gstSimpleEarthStream &ses, 
     std::string &raw_packet,
     const std::string &server,
@@ -40,7 +42,7 @@ bool processGlobeRequest(
     const int col,
     const int level);
 
-bool processGlobeRequest(
+GEGETPACKET_ERROR processGlobeRequest(
     gstSimpleEarthStream &ses, 
     std::string &raw_packet,
     const std::string &server,
@@ -128,29 +130,40 @@ int main(int argc, char *argv[]) {
     return -2;
   }
 
-  // if (geemap && row == 0 && col == 0 && level == 0) {
-  //   std::cout << "Row, col, and level must be supplied when targeting a map." << std::endl;
-  //   return -3;
-  // }
+  std::unordered_map<GEGETPACKET_ERROR, const std::string, std::hash<int>> gegetpacket_error_str({
+      {GEGETPACKET_SUCCESS, "Success"},
+      {GEGETPACKET_ERROR_DBROOT, "Error processing globe dbroot"},
+      {GEGETPACKET_ERROR_SERVERDEFS, "Error processing map serverdefs"},
+      {GEGETPACKET_WRONG_DB_TYPE, "Wrong database type"},
+      {GEGETPACKET_PACKET_NOT_FOUND, "Packet not found"},
+      {GEGETPACKET_METAPACKET_NOT_FOUND, "Metadata (quadtree) packet not found"},
+      {GEGETPACKET_METAPACKET_ERROR, "Metadata (quadtree) packet error"}
+  });
 
   gstSimpleEarthStream::Init();
 
   gstSimpleEarthStream ses(server);
   std::string raw_packet;
-  bool got_packet = false;
+  GEGETPACKET_ERROR get_packet_result = GEGETPACKET_PACKET_NOT_FOUND;
 
-  // if (geemap) {
-  //   got_packet = processMapRequest(ses, raw_packet, server, row, col, level);
-  // } else 
-  {
-    if (qt_address.length() != 0) {
-      got_packet = processGlobeRequest(ses, raw_packet, server, qt_address);
-    } else {
-      got_packet = processGlobeRequest(ses, raw_packet, server, row, col, level);
-    }
+  if (qt_address.length() != 0) {
+    get_packet_result = processGlobeRequest(ses, raw_packet, server, qt_address);
+  } else {
+    get_packet_result = processGlobeRequest(ses, raw_packet, server, row, col, level);
   }
 
-  if (got_packet) {
+  if (get_packet_result == GEGETPACKET_WRONG_DB_TYPE) {
+    std::cout << "processGlobeRequest() returned wrong database type.  Trying processMapRequest()." << std::endl;
+    if (row == 0 && col == 0 && level == 0) {
+      std::cout << "Row, col, and level must be supplied when targeting a map." << std::endl;
+      return -3;
+    }
+    get_packet_result = processMapRequest(ses, raw_packet, server, row, col, level);
+  }
+
+  std::cout << "Process request returned \"" << gegetpacket_error_str[get_packet_result] << "\"." << std::endl;
+
+  if (get_packet_result == GEGETPACKET_SUCCESS) {
     std::cout << "Function returned true.  raw_packet.size() = " << raw_packet.size() << std::endl;
     std::ofstream fout;
     fout.open(output, std::ios_base::out | std::ios_base::binary);

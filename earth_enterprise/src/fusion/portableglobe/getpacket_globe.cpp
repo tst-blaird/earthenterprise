@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "gegetpacket.h"
+
 #include <iostream>  // NOLINT(readability/streams)
 #include <sstream>
 #include <memory>
@@ -25,6 +27,7 @@
 #include "common/gedbroot/eta2proto_dbroot.h"
 #include "common/etencoder.h"
 #include "common/packetcompress.h"
+#include "common/qtpacket/quadtreepacket.h"
 
 namespace {
 
@@ -43,10 +46,11 @@ const std::string getTranslationStringFromDbRoot(const geProtoDbroot &dbroot, co
   return "";
 }
 
-bool processDbroot(const std::string &raw_data, gstSimpleEarthStream &ses, const std::string &server) {
+int processDbroot(const std::string &raw_data, gstSimpleEarthStream &ses, const std::string &server) {
 
   std::string indent = "  ";
   geProtoDbroot proto_dbroot;
+  int quadtree_version = -1;
 
   // check whether it is an ETA dbroot
   if (EtaDbroot::IsEtaDbroot(raw_data, EtaDbroot::kExpectBinary)) {
@@ -59,7 +63,7 @@ bool processDbroot(const std::string &raw_data, gstSimpleEarthStream &ses, const
     const bool EXPECT_EPOCH = true;
     if (!proto_dbroot.IsValid(EXPECT_EPOCH)) {
       std::cout << "processDbroot: ConvertFromBinary generated invalid dbroot." << std::endl;
-      return false;
+      return quadtree_version;
     }
   } else {
     // It is already a proto dbroot.
@@ -67,7 +71,7 @@ bool processDbroot(const std::string &raw_data, gstSimpleEarthStream &ses, const
     keyhole::dbroot::EncryptedDbRootProto encrypted;
     if (!encrypted.ParseFromString(raw_data)) {
       std::cout << "processDbroot: encrypted.ParseFromString returned false." << std::endl;
-      return false;
+      return quadtree_version;
     }
 
     // Decode in place in the proto buffer.
@@ -82,13 +86,13 @@ bool processDbroot(const std::string &raw_data, gstSimpleEarthStream &ses, const
                          encrypted.dbroot_data().size(),
                          &uncompressed)) {
       std::cout << "processDbroot: KhPktDecompress returned false." << std::endl;
-      return false;
+      return quadtree_version;
     }
 
     // Parse actual dbroot_v2 proto.
     if (!proto_dbroot.ParseFromArray(uncompressed.data(), uncompressed.size())) {
       std::cout << "processDbroot: proto_dbroot.ParseFromArray returned false." << std::endl;
-      return false;
+      return quadtree_version;
     }
   }
 
@@ -124,7 +128,13 @@ bool processDbroot(const std::string &raw_data, gstSimpleEarthStream &ses, const
   //std::cout << "dbroot_meta.descriptor->name = \"" << proto_dbroot.GetDescriptor()->name() << "\"" << std::endl;
   //std::cout << "dbroot_meta.descriptor->DebugString() = \"" << proto_dbroot.GetDescriptor()->DebugString() << "\"" << std::endl;
 
-
+  if (proto_dbroot.has_database_version()) {
+    const keyhole::dbroot::DatabaseVersionProto database_version = proto_dbroot.database_version();
+    if (database_version.has_quadtree_version()) {
+      quadtree_version = database_version.quadtree_version();
+      std::cout << "proto_dbroot.database_version().quadtree_version() = " << quadtree_version << std::endl;
+    }
+  }
 
   std::cout << "proto_dbroot.nested_feature_size = " << proto_dbroot.nested_feature_size() << std::endl;
   for (int i = 0; i < proto_dbroot.nested_feature_size(); i++) {
@@ -199,22 +209,114 @@ bool processDbroot(const std::string &raw_data, gstSimpleEarthStream &ses, const
 
       url = ss.str();
       std::cout << "url = \"" << url << "\"" << std::endl;
-      if (!ses.GetRawPacket(url, &nf_raw_packet, false)) {
-        return false;
-      }
-
-      if (!processDbroot(nf_raw_packet, ses, server)) {
-        std::cout << "processDbroot returned false." << std::endl;
-        return false;
+      if (ses.GetRawPacket(url, &nf_raw_packet, false)) {
+        if (!processDbroot(nf_raw_packet, ses, server)) {
+          std::cout << "processDbroot for nested feature returned false." << std::endl;
+        }
+      } else {
+        std::cout << "GetRawPacket for nested feature returned false." << std::endl;
       }
     }
   }
 
-  std::cout << "processDbroot: returning true." << std::endl;
-  return true;
+  std::cout << "processDbroot: returning quadtree_version = " << quadtree_version << std::endl;
+  return quadtree_version;
 }
 
-bool processGlobeRequest(
+std::string getMetaAddress(const std::string &qt_address) {
+
+  const std::string meta_address = (qt_address.length() <= 3 ? "0" : qt_address.substr(0, (qt_address.length() / 4) * 4));
+
+  std::cout << "qt_address = " << qt_address << " (" << qt_address.length() << ")" << std::endl;
+  std::cout << "meta_address = " << meta_address << " (" << meta_address.length() << ")" << std::endl;
+
+  return meta_address;
+}
+
+GEGETPACKET_ERROR getMetaInfoForTile(gstSimpleEarthStream &ses, const std::string &server, const std::string &qt_address, const int quadtree_version, int *tile_db_version) {
+
+  const std::string meta_address = getMetaAddress(qt_address);
+  std::string raw_meta_packet;
+
+  // 192.168.158.1 - - [13/Feb/2020:11:25:48 -0500] "GET /FloridaCountiesOutlinedPink-OrlandoStreetsLotsOfColors-Cut01/flatfile?q2-0-q.1 HTTP/1.1" 200 77
+  // 192.168.158.1 - - [13/Feb/2020:11:25:49 -0500] "GET /FloridaCountiesOutlinedPink-OrlandoStreetsLotsOfColors-Cut01/flatfile?q2-0022-q.1 HTTP/1.1" 200 82
+  // 192.168.158.1 - - [13/Feb/2020:11:25:49 -0500] "GET /FloridaCountiesOutlinedPink-OrlandoStreetsLotsOfColors-Cut01/flatfile?q2-0023-q.1 HTTP/1.1" 200 82
+
+  const std::string url = server + "/flatfile?q2-" + meta_address + "-q." + std::to_string(quadtree_version);
+
+  bool packet_found = ses.GetRawPacket(url, &raw_meta_packet, true);
+
+  std::cout << "quadtree metadata packet found? " << (packet_found ? "yes" : "no") << std::endl;
+
+  if (packet_found) {
+    // decoded by GetRawPacket.  Decompress it.
+    LittleEndianReadBuffer uncompressed;
+    if (!KhPktDecompress(raw_meta_packet.data(),
+                        raw_meta_packet.size(),
+                        &uncompressed)) {
+      std::cout << "getMetaInfoForTile: KhPktDecompress returned false." << std::endl;
+      return GEGETPACKET_METAPACKET_ERROR;
+    }
+
+    std::cout << "uncompressed data size = " << uncompressed.size() << std::endl;
+
+    qtpacket::KhQuadTreePacket16 qtPacket;
+    qtPacket.Pull(uncompressed);
+
+    const qtpacket::KhDataHeader qtHeader = qtPacket.packet_header();
+
+    std::cout << "qtHeader.magic_id = " << qtHeader.magic_id << std::endl;
+    std::cout << "qtHeader.data_type_id = " << qtHeader.data_type_id << std::endl;
+    std::cout << "qtHeader.version = " << qtHeader.version << std::endl;
+    std::cout << "qtHeader.num_instances = " << qtHeader.num_instances << std::endl;
+    std::cout << "qtHeader.data_instance_size = " << qtHeader.data_instance_size << std::endl;
+    std::cout << "qtHeader.data_buffer_offset = " << qtHeader.data_buffer_offset << std::endl;
+    std::cout << "qtHeader.data_buffer_size = " << qtHeader.data_buffer_size << std::endl;
+    std::cout << "qtHeader.meta_buffer_size = " << qtHeader.meta_buffer_size << std::endl;
+
+    const std::string indent = "  ";
+    for (int i = 0; i < qtHeader.num_instances; i++) {
+      const qtpacket::KhQuadTreeQuantum16 *instance = qtPacket.GetPtr(0);
+
+      std::cout << indent << "instance " << i << ": instance->children.children = " << instance->children.children << std::endl;
+    }
+
+
+
+
+    // int header_num = 0;
+    // const std::string indent = "  ";
+    // qtpacket::KhDataHeader qtHeader;
+    // while (uncompressed.CurrPos() < uncompressed.size()) {
+    //   header_num++;
+    //   qtHeader.Pull(uncompressed);
+
+    //   std::cout << "qtHeader " << header_num << ":" << std::endl;
+
+    //   std::cout << indent << "qtHeader.magic_id = " << qtHeader.magic_id << std::endl;
+    //   std::cout << indent << "qtHeader.data_type_id = " << qtHeader.data_type_id << std::endl;
+    //   std::cout << indent << "qtHeader.version = " << qtHeader.version << std::endl;
+    //   std::cout << indent << "qtHeader.num_instances = " << qtHeader.num_instances << std::endl;
+    //   std::cout << indent << "qtHeader.data_instance_size = " << qtHeader.data_instance_size << std::endl;
+    //   std::cout << indent << "qtHeader.data_buffer_offset = " << qtHeader.data_buffer_offset << std::endl;
+    //   std::cout << indent << "qtHeader.data_buffer_size = " << qtHeader.data_buffer_size << std::endl;
+    //   std::cout << indent << "qtHeader.meta_buffer_size = " << qtHeader.meta_buffer_size << std::endl;
+
+
+
+    //   for (int i = 0; i < qtHeader.num_instances; i++) {
+    //     qtpacket::KhQuadTreeQuantum16 *instance = qtHeader.GetPtr()
+
+
+    //   }
+      
+    // }
+  }
+
+  return GEGETPACKET_METAPACKET_NOT_FOUND;
+}
+
+GEGETPACKET_ERROR processGlobeRequest(
     gstSimpleEarthStream &ses, 
     std::string &raw_packet,
     const std::string &server,
@@ -222,6 +324,8 @@ bool processGlobeRequest(
   std::stringstream ss;
   std::string url;
   std::cout << "Processing globe request" << std::endl;
+
+  GEGETPACKET_ERROR ret = GEGETPACKET_SUCCESS;
 
   // get the dbRoot
   ss << server;
@@ -231,29 +335,30 @@ bool processGlobeRequest(
 
   std::cout << "url = \"" << url << "\"" << std::endl;
   if (!ses.GetRawPacket(url, &raw_packet, false)) {
-    return false;
+    return GEGETPACKET_WRONG_DB_TYPE;
   }
 
-  if (!processDbroot(raw_packet, ses, server)) {
-    std::cout << "processDbroot returned false." << std::endl;
-    return false;
+  const int quadtree_version = processDbroot(raw_packet, ses, server);
+
+  if (quadtree_version == -1) {
+    std::cout << "processDbroot did not find a quadtree version." << std::endl;
+    return GEGETPACKET_ERROR_DBROOT;
   }
 
   std::cout << "processDbroot returned true." << std::endl;
-  return false;
 
-  // std::string qtStr = fusion_portableglobe::ConvertToQtNode(col, row, level);
+  int tile_db_version = 0;
+  ret = getMetaInfoForTile(ses, server, qt_address, quadtree_version, &tile_db_version);
 
-  // std::cout << "quadtree address = \"" << qtStr << "\"" << std::endl;
-  // std::cout << "tile_db_version = \"" << tile_db_version << "\"" << std::endl;
+  if (ret == GEGETPACKET_SUCCESS) {
+    std::string url = server + "/flatfile?f1-" + qt_address + "-i." + std::to_string(tile_db_version);
+    ret = (ses.GetRawPacket(url, &raw_packet, true) ? GEGETPACKET_SUCCESS : GEGETPACKET_PACKET_NOT_FOUND);
+  }
 
-
-  // std::string url = server + "/flatfile?f1-" + qtStr + "-i." + tile_db_version;
-
-  // return ses.GetRawPacket(url, &raw_packet, true);
+  return ret;
 }
 
-bool processGlobeRequest(
+GEGETPACKET_ERROR processGlobeRequest(
     gstSimpleEarthStream &ses, 
     std::string &raw_packet,
     const std::string &server,
