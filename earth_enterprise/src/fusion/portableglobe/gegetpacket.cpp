@@ -99,6 +99,9 @@ int main(int argc, char *argv[]) {
   options.opt("tile_db_version", tile_db_version);
   options.opt("server", server);
   options.opt("qt_address", qt_address);
+  options.setExclusiveRequired("qt_address", "row");
+  options.setExclusiveRequired("qt_address", "col");
+  options.setExclusiveRequired("qt_address", "level");
 
   //std::set<std::string> required = {"server", "output", "row", "col", "level"};
   std::set<std::string> required = {"server", "output"};

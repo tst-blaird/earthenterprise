@@ -30,8 +30,8 @@
 #include "common/qtpacket/quadtreepacket.h"
 
 namespace {
-
-
+    gstSimpleEarthStream *ses = nullptr;
+    std::string server;
 }
 
 // Copied from our ATAK cut reader code.
@@ -46,7 +46,7 @@ const std::string getTranslationStringFromDbRoot(const geProtoDbroot &dbroot, co
   return "";
 }
 
-int processDbroot(const std::string &raw_data, gstSimpleEarthStream &ses, const std::string &server) {
+int processDbroot(const std::string &raw_data) {
 
   std::string indent = "  ";
   geProtoDbroot proto_dbroot;
@@ -209,8 +209,8 @@ int processDbroot(const std::string &raw_data, gstSimpleEarthStream &ses, const 
 
       url = ss.str();
       std::cout << "url = \"" << url << "\"" << std::endl;
-      if (ses.GetRawPacket(url, &nf_raw_packet, false)) {
-        if (!processDbroot(nf_raw_packet, ses, server)) {
+      if (ses->GetRawPacket(url, &nf_raw_packet, false)) {
+        if (!processDbroot(nf_raw_packet)) {
           std::cout << "processDbroot for nested feature returned false." << std::endl;
         }
       } else {
@@ -233,10 +233,38 @@ std::string getMetaAddress(const std::string &qt_address) {
   return meta_address;
 }
 
-GEGETPACKET_ERROR getMetaInfoForTile(gstSimpleEarthStream &ses, const std::string &server, const std::string &qt_address, const int quadtree_version, int *tile_db_version) {
+bool validateNodeAndChildren(const qtpacket::KhQuadTreeQuantum16 *node, 
+                             const QuadtreePath &meta_qt_path) {
+
+  // if (node->HasLayerOfType(keyhole::QuadtreeLayer::LayerType::QuadtreeLayer_LayerType_LAYER_TYPE_IMAGERY)) {
+  //   get
+
+  // }
+
+
+
+  // for (int i = 0; i < 4; ++i) {
+  //   if (node->children.GetBit(i)) {
+  //     const QuadtreePath new_qt_path(qt_path.Child(i));
+
+
+
+  //     Traverser(collector, numbering, node_indexp, new_qt_path);
+  //   }
+  // }
+
+
+
+
+  return false;
+}
+
+GEGETPACKET_ERROR getMetaInfoForTile(const std::string &qt_address, const int quadtree_version, int *tile_db_version) {
 
   const std::string meta_address = getMetaAddress(qt_address);
   std::string raw_meta_packet;
+  const std::string indent = "  ";
+
 
   // 192.168.158.1 - - [13/Feb/2020:11:25:48 -0500] "GET /FloridaCountiesOutlinedPink-OrlandoStreetsLotsOfColors-Cut01/flatfile?q2-0-q.1 HTTP/1.1" 200 77
   // 192.168.158.1 - - [13/Feb/2020:11:25:49 -0500] "GET /FloridaCountiesOutlinedPink-OrlandoStreetsLotsOfColors-Cut01/flatfile?q2-0022-q.1 HTTP/1.1" 200 82
@@ -244,7 +272,9 @@ GEGETPACKET_ERROR getMetaInfoForTile(gstSimpleEarthStream &ses, const std::strin
 
   const std::string url = server + "/flatfile?q2-" + meta_address + "-q." + std::to_string(quadtree_version);
 
-  bool packet_found = ses.GetRawPacket(url, &raw_meta_packet, true);
+  std::cout << "Getting quadtree metadata packet from: " << url << std::endl;
+
+  bool packet_found = ses->GetRawPacket(url, &raw_meta_packet, true);  // third parameter is boolean for decrypt.
 
   std::cout << "quadtree metadata packet found? " << (packet_found ? "yes" : "no") << std::endl;
 
@@ -263,6 +293,14 @@ GEGETPACKET_ERROR getMetaInfoForTile(gstSimpleEarthStream &ses, const std::strin
     qtpacket::KhQuadTreePacket16 qtPacket;
     qtPacket.Pull(uncompressed);
 
+    std::cout << "After qtPacket.Pull(uncompressed):" << std::endl;
+    std::cout << indent << "uncompressed.CurrPos() = " << uncompressed.CurrPos() << std::endl;
+    std::cout << indent << "uncompressed.size() = " << uncompressed.size() << std::endl;
+
+    if (uncompressed.CurrPos() != uncompressed.size()) {
+      std::cout << indent << "**** NOT EQUAL ^^^^ NOT EQUAL ^^^^ NOT EQUAL ^^^^ NOT EQUAL ****" << std::endl;
+    }
+
     const qtpacket::KhDataHeader qtHeader = qtPacket.packet_header();
 
     std::cout << "qtHeader.magic_id = " << qtHeader.magic_id << std::endl;
@@ -274,11 +312,135 @@ GEGETPACKET_ERROR getMetaInfoForTile(gstSimpleEarthStream &ses, const std::strin
     std::cout << "qtHeader.data_buffer_size = " << qtHeader.data_buffer_size << std::endl;
     std::cout << "qtHeader.meta_buffer_size = " << qtHeader.meta_buffer_size << std::endl;
 
-    const std::string indent = "  ";
-    for (int i = 0; i < qtHeader.num_instances; i++) {
-      const qtpacket::KhQuadTreeQuantum16 *instance = qtPacket.GetPtr(0);
+    const qtpacket::KhQuadTreeQuantum16 *node = qtPacket.GetPtr(0);
+    validateNodeAndChildren(node, QuadtreePath());
 
-      std::cout << indent << "instance " << i << ": instance->children.children = " << instance->children.children << std::endl;
+    return GEGETPACKET_METAPACKET_NOT_FOUND;
+
+
+    // for (int i = 0; i < 4; ++i) {
+    //   if (node->children.GetBit(i)) {
+    //     const QuadtreePath new_qt_path(qt_path.Child(i));
+
+
+
+    //     Traverser(collector, numbering, node_indexp, new_qt_path);
+    //   }
+    // }
+
+
+
+
+
+    QuadtreePath meta_quadtreepath(meta_address);
+    std::ostringstream oss;
+    node->ToString(oss, -1, meta_address, 0);
+    std::cout << indent << oss.str();
+
+    return GEGETPACKET_METAPACKET_NOT_FOUND;
+
+
+
+
+    const char* data = uncompressed.data();
+
+    for (int i = 0; i < qtHeader.num_instances; i++) {
+      // I don't think the following GetPtr(i) call is giving us a correct return.
+      // const qtpacket::KhQuadTreeQuantum16 *instance = qtPacket.GetPtr(i);
+      //std::cout << indent << "instance " << i << ": instance->children.children = " << instance->children.children << std::endl;
+
+      const size_t offset = sizeof(qtHeader) + (qtHeader.data_instance_size * i);
+      const qtpacket::KhQuadTreeQuantum16 *instance = reinterpret_cast<const qtpacket::KhQuadTreeQuantum16*>(data + offset);
+
+      QuadtreePath meta_quadtreepath(meta_address);
+      std::ostringstream oss;
+      instance->ToString(oss, -1, meta_address, i);
+      std::cout << indent << oss.str();
+      continue;
+
+      std::cout << indent << "instance " << i << " at offset " << offset << ": " << std::endl;
+
+      std::cout << indent << indent << "cnode_version = " << instance->cnode_version << std::endl;
+      std::cout << indent << indent << "image_version = " << instance->image_version << std::endl;
+      std::cout << indent << indent << "terrain_version = " << instance->terrain_version << std::endl;
+      //std::cout << indent << indent << "num_channels = " << instance->num_channels() << std::endl;
+
+
+
+/*
+
+        parser = QuadTreePacketNodeInstanceParser(
+            packet_data, self.header_size, self.data_instance_size,
+            self.data_buffer_offset, self.data_buffer_size,
+            self.endianess_char)
+
+    def __init__(self, packet_data, header_size, data_instance_size,
+                 data_buffer_offset, data_buffer_size, endianess_char):
+        """
+        packet_data = decompressed binary quad tree packet.
+        """
+ 
+        self.header_size = header_size
+        self.endianess_char = endianess_char
+        self.data_instance_size = data_instance_size
+        self.data_buffer_offset = data_buffer_offset
+        self.data_buffer_size = data_buffer_size
+        self.tile_instances = []
+        self.instance_index = 0
+        self.packet_data = packet_data
+ 
+    // qt_address = 0 (1)
+    // meta_address = 0 (1)
+    // quadtree metadata packet found? yes
+    // uncompressed data size = 1472
+    // After qtPacket.Pull(uncompressed):
+    //   uncompressed.CurrPos() = 1472
+    //   uncompressed.size() = 1472
+    // qtHeader.magic_id = 32301
+    // qtHeader.data_type_id = 1
+    // qtHeader.version = 2
+    // qtHeader.num_instances = 45
+    // qtHeader.data_instance_size = 32
+    // qtHeader.data_buffer_offset = 1472
+    // qtHeader.data_buffer_size = 0
+    // qtHeader.meta_buffer_size = 0
+
+    def parse_instance(self, instance_quadtree_path):
+        """
+        instance_quadtree_path = quad tree path (key) to the tile whose
+            metadata instance we're parsing.
+        """
+ 
+        offset = self.data_buffer_offset  1472
+        data_buffer_data = self.packet_data[offset : offset + self.data_buffer_size]   1472 : 1472
+        instance = TileMetadata(self.endianess_char)
+        offset = self.header_size + self.data_instance_size * self.instance_index  32 + (32 * 0) = 32
+ 
+        instance.parse(
+            self.packet_data[offset : offset + self.data_instance_size],  32 : 64
+            data_buffer_data)
+        instance.quadtree_path = instance_quadtree_path
+        self.tile_instances.append(instance)
+        self.instance_index += 1
+ 
+        if not instance.is_leaf_node:
+            for child_index in xrange(4):
+                if instance.has_child[child_index]:
+                    self.parse_instance(
+                        instance_quadtree_path + str(child_index))
+ 
+        return instance
+
+
+
+
+
+
+
+
+
+*/
+
     }
 
 
@@ -317,13 +479,16 @@ GEGETPACKET_ERROR getMetaInfoForTile(gstSimpleEarthStream &ses, const std::strin
 }
 
 GEGETPACKET_ERROR processGlobeRequest(
-    gstSimpleEarthStream &ses, 
+    gstSimpleEarthStream &_ses, 
     std::string &raw_packet,
-    const std::string &server,
+    const std::string &_server,
     const std::string &qt_address) {
   std::stringstream ss;
   std::string url;
   std::cout << "Processing globe request" << std::endl;
+
+  ses = &_ses;
+  server = _server;
 
   GEGETPACKET_ERROR ret = GEGETPACKET_SUCCESS;
 
@@ -334,11 +499,11 @@ GEGETPACKET_ERROR processGlobeRequest(
   url = ss.str();
 
   std::cout << "url = \"" << url << "\"" << std::endl;
-  if (!ses.GetRawPacket(url, &raw_packet, false)) {
+  if (!ses->GetRawPacket(url, &raw_packet, false)) {
     return GEGETPACKET_WRONG_DB_TYPE;
   }
 
-  const int quadtree_version = processDbroot(raw_packet, ses, server);
+  const int quadtree_version = processDbroot(raw_packet);
 
   if (quadtree_version == -1) {
     std::cout << "processDbroot did not find a quadtree version." << std::endl;
@@ -348,20 +513,20 @@ GEGETPACKET_ERROR processGlobeRequest(
   std::cout << "processDbroot returned true." << std::endl;
 
   int tile_db_version = 0;
-  ret = getMetaInfoForTile(ses, server, qt_address, quadtree_version, &tile_db_version);
+  ret = getMetaInfoForTile(qt_address, quadtree_version, &tile_db_version);
 
   if (ret == GEGETPACKET_SUCCESS) {
     std::string url = server + "/flatfile?f1-" + qt_address + "-i." + std::to_string(tile_db_version);
-    ret = (ses.GetRawPacket(url, &raw_packet, true) ? GEGETPACKET_SUCCESS : GEGETPACKET_PACKET_NOT_FOUND);
+    ret = (ses->GetRawPacket(url, &raw_packet, true) ? GEGETPACKET_SUCCESS : GEGETPACKET_PACKET_NOT_FOUND);
   }
 
   return ret;
 }
 
 GEGETPACKET_ERROR processGlobeRequest(
-    gstSimpleEarthStream &ses, 
+    gstSimpleEarthStream &_ses, 
     std::string &raw_packet,
-    const std::string &server,
+    const std::string &_server,
     const int row,
     const int col,
     const int level) {
@@ -370,5 +535,5 @@ GEGETPACKET_ERROR processGlobeRequest(
 
   std::cout << "Converted row " << row << ", col " << col << ", level " << level << " to quadtree address \"" << qtStr << "\"" << std::endl;
 
-  return processGlobeRequest(ses, raw_packet, server, qtStr);
+  return processGlobeRequest(_ses, raw_packet, _server, qtStr);
 }
