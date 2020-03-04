@@ -33,6 +33,7 @@ namespace {
   const std::string indent = "  ";
   gstSimpleEarthStream *ses = nullptr;
   std::string server;
+  int quadtree_version = -1;
 }
 
 // Copied from our ATAK cut reader code.
@@ -47,10 +48,9 @@ const std::string getTranslationStringFromDbRoot(const geProtoDbroot &dbroot, co
   return "";
 }
 
-int processDbroot(const std::string &raw_data) {
+bool processDbroot(const std::string &raw_data) {
 
   geProtoDbroot proto_dbroot;
-  int quadtree_version = -1;
 
   // check whether it is an ETA dbroot
   if (EtaDbroot::IsEtaDbroot(raw_data, EtaDbroot::kExpectBinary)) {
@@ -63,7 +63,7 @@ int processDbroot(const std::string &raw_data) {
     const bool EXPECT_EPOCH = true;
     if (!proto_dbroot.IsValid(EXPECT_EPOCH)) {
       std::cout << "processDbroot: ConvertFromBinary generated invalid dbroot." << std::endl;
-      return quadtree_version;
+      return false;
     }
   } else {
     // It is already a proto dbroot.
@@ -71,7 +71,7 @@ int processDbroot(const std::string &raw_data) {
     keyhole::dbroot::EncryptedDbRootProto encrypted;
     if (!encrypted.ParseFromString(raw_data)) {
       std::cout << "processDbroot: encrypted.ParseFromString returned false." << std::endl;
-      return quadtree_version;
+      return false;
     }
 
     // Decode in place in the proto buffer.
@@ -86,13 +86,13 @@ int processDbroot(const std::string &raw_data) {
                          encrypted.dbroot_data().size(),
                          &uncompressed)) {
       std::cout << "processDbroot: KhPktDecompress returned false." << std::endl;
-      return quadtree_version;
+      return false;
     }
 
     // Parse actual dbroot_v2 proto.
     if (!proto_dbroot.ParseFromArray(uncompressed.data(), uncompressed.size())) {
       std::cout << "processDbroot: proto_dbroot.ParseFromArray returned false." << std::endl;
-      return quadtree_version;
+      return false;
     }
   }
 
@@ -220,7 +220,7 @@ int processDbroot(const std::string &raw_data) {
   }
 
   std::cout << "processDbroot: returning quadtree_version = " << quadtree_version << std::endl;
-  return quadtree_version;
+  return true;
 }
 
 std::string getMetaAddress(const std::string &qt_address) {
@@ -247,15 +247,40 @@ bool validateNodeAndChildren(const qtpacket::KhQuadTreePacket16 &qtPacket,
   if (node->HasLayerOfType(keyhole::QuadtreeLayer::LayerType::QuadtreeLayer_LayerType_LAYER_TYPE_IMAGERY)) {
     std::string imagery_packet_raw;
     std::string imagery_packet_url = server + "/flatfile?f1-" + qt_path.AsString() + "-i." + std::to_string(node->image_version);
-    std::cout << indent << imagery_packet_url << std::endl;
+    //std::cout << indent << imagery_packet_url << std::endl;
     const bool imagery_packet_ret = ses->GetRawPacket(imagery_packet_url, &imagery_packet_raw, true);
-    std::cout << indent << "Imagery packet " << (imagery_packet_ret ? "Y" : "N") << " for " << qt_path.AsString();
+    std::cout << indent << "Imagery  packet " << (imagery_packet_ret ? "Y" : "N") << " for " << qt_path.AsString();
     if (!imagery_packet_ret) {
       std::cout << " <-- ********************";
     }
     std::cout << std::endl;
   } else {
-    std::cout << indent << "Imagery packet -  for " << qt_path.AsString() << std::endl;
+    std::cout << indent << "Imagery  packet - for " << qt_path.AsString() << std::endl;
+  }
+
+  // Is there another quadtree metadata packet at this address?
+  if (node->children.GetCacheNodeBit()) {
+    std::string leaf_qtp_raw;
+    const std::string leaf_qtp_url = server + "/flatfile?q2-" + qt_path.AsString() + "-q." + std::to_string(quadtree_version);
+    //std::cout << indent << leaf_qtp_url << std::endl;
+    const bool leaf_qtp_ret = ses->GetRawPacket(leaf_qtp_url, &leaf_qtp_raw, true);  // third parameter is boolean for decrypt.
+    std::cout << indent << "Quadtree packet " << (leaf_qtp_ret ? "Y" : "N") << " for " << qt_path.AsString();
+    if (!leaf_qtp_ret) {
+      std::cout << " <-- ********************";
+    }
+    std::cout << std::endl;
+
+    LittleEndianReadBuffer leaf_qtp_uncompressed;
+    if (!KhPktDecompress(leaf_qtp_raw.data(),
+                        leaf_qtp_raw.size(),
+                        &leaf_qtp_uncompressed)) {
+      std::cout << indent << "KhPktDecompress returned false." << std::endl;
+    } else {
+      qtpacket::KhQuadTreePacket16 leaf_qtp;
+      leaf_qtp.Pull(leaf_qtp_uncompressed);
+      int leaf_node_index = 0;
+      validateNodeAndChildren(leaf_qtp, &leaf_node_index, qt_path);
+    }
   }
 
   for (int i = 0; i < 4; ++i) {
@@ -512,7 +537,10 @@ GEGETPACKET_ERROR processGlobeRequest(
     return GEGETPACKET_WRONG_DB_TYPE;
   }
 
-  const int quadtree_version = processDbroot(raw_packet);
+  if (!processDbroot(raw_packet)) {
+    std::cout << "processDbroot failed to process the raw_packet." << std::endl;
+    return GEGETPACKET_ERROR_DBROOT;
+  }
 
   if (quadtree_version == -1) {
     std::cout << "processDbroot did not find a quadtree version." << std::endl;
