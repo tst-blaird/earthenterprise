@@ -30,8 +30,9 @@
 #include "common/qtpacket/quadtreepacket.h"
 
 namespace {
-    gstSimpleEarthStream *ses = nullptr;
-    std::string server;
+  const std::string indent = "  ";
+  gstSimpleEarthStream *ses = nullptr;
+  std::string server;
 }
 
 // Copied from our ATAK cut reader code.
@@ -48,7 +49,6 @@ const std::string getTranslationStringFromDbRoot(const geProtoDbroot &dbroot, co
 
 int processDbroot(const std::string &raw_data) {
 
-  std::string indent = "  ";
   geProtoDbroot proto_dbroot;
   int quadtree_version = -1;
 
@@ -233,37 +233,46 @@ std::string getMetaAddress(const std::string &qt_address) {
   return meta_address;
 }
 
-bool validateNodeAndChildren(const qtpacket::KhQuadTreeQuantum16 *node, 
-                             const QuadtreePath &meta_qt_path) {
+bool validateNodeAndChildren(const qtpacket::KhQuadTreePacket16 &qtPacket,
+                             int *node_indexp,
+                             const QuadtreePath &qt_path) {
 
-  // if (node->HasLayerOfType(keyhole::QuadtreeLayer::LayerType::QuadtreeLayer_LayerType_LAYER_TYPE_IMAGERY)) {
-  //   get
+  const qtpacket::KhQuadTreeQuantum16 *node = qtPacket.GetPtr(*node_indexp);
 
-  // }
+  if (node == nullptr) {
+    std::cout << "GOT NULL NODE FOR NODE INDEX " << *node_indexp << std::endl;
+    return false;
+  }
 
+  if (node->HasLayerOfType(keyhole::QuadtreeLayer::LayerType::QuadtreeLayer_LayerType_LAYER_TYPE_IMAGERY)) {
+    std::string imagery_packet_raw;
+    std::string imagery_packet_url = server + "/flatfile?f1-" + qt_path.AsString() + "-i." + std::to_string(node->image_version);
+    std::cout << indent << imagery_packet_url << std::endl;
+    const bool imagery_packet_ret = ses->GetRawPacket(imagery_packet_url, &imagery_packet_raw, true);
+    std::cout << indent << "Imagery packet " << (imagery_packet_ret ? "Y" : "N") << " for " << qt_path.AsString();
+    if (!imagery_packet_ret) {
+      std::cout << " <-- ********************";
+    }
+    std::cout << std::endl;
+  } else {
+    std::cout << indent << "Imagery packet -  for " << qt_path.AsString() << std::endl;
+  }
 
+  for (int i = 0; i < 4; ++i) {
+    if (node->children.GetBit(i)) {
+      const QuadtreePath new_qt_path(qt_path.Child(i));
+      *node_indexp += 1;
+      validateNodeAndChildren(qtPacket, node_indexp, new_qt_path);
+    }
+  }
 
-  // for (int i = 0; i < 4; ++i) {
-  //   if (node->children.GetBit(i)) {
-  //     const QuadtreePath new_qt_path(qt_path.Child(i));
-
-
-
-  //     Traverser(collector, numbering, node_indexp, new_qt_path);
-  //   }
-  // }
-
-
-
-
-  return false;
+  return true;
 }
 
 GEGETPACKET_ERROR getMetaInfoForTile(const std::string &qt_address, const int quadtree_version, int *tile_db_version) {
 
   const std::string meta_address = getMetaAddress(qt_address);
   std::string raw_meta_packet;
-  const std::string indent = "  ";
 
 
   // 192.168.158.1 - - [13/Feb/2020:11:25:48 -0500] "GET /FloridaCountiesOutlinedPink-OrlandoStreetsLotsOfColors-Cut01/flatfile?q2-0-q.1 HTTP/1.1" 200 77
@@ -312,8 +321,8 @@ GEGETPACKET_ERROR getMetaInfoForTile(const std::string &qt_address, const int qu
     std::cout << "qtHeader.data_buffer_size = " << qtHeader.data_buffer_size << std::endl;
     std::cout << "qtHeader.meta_buffer_size = " << qtHeader.meta_buffer_size << std::endl;
 
-    const qtpacket::KhQuadTreeQuantum16 *node = qtPacket.GetPtr(0);
-    validateNodeAndChildren(node, QuadtreePath());
+    int node_index = 0;
+    validateNodeAndChildren(qtPacket, &node_index, QuadtreePath(meta_address));
 
     return GEGETPACKET_METAPACKET_NOT_FOUND;
 
@@ -332,10 +341,10 @@ GEGETPACKET_ERROR getMetaInfoForTile(const std::string &qt_address, const int qu
 
 
 
-    QuadtreePath meta_quadtreepath(meta_address);
-    std::ostringstream oss;
-    node->ToString(oss, -1, meta_address, 0);
-    std::cout << indent << oss.str();
+    // QuadtreePath meta_quadtreepath(meta_address);
+    // std::ostringstream oss;
+    // node->ToString(oss, -1, meta_address, 0);
+    // std::cout << indent << oss.str();
 
     return GEGETPACKET_METAPACKET_NOT_FOUND;
 
