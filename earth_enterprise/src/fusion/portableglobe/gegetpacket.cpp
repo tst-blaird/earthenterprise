@@ -40,16 +40,19 @@ GEGETPACKET_ERROR processGlobeRequest(
     const std::string &server,
     const int row,
     const int col,
-    const int level);
+    const int level,
+    const bool no_children);
 
 GEGETPACKET_ERROR processGlobeRequest(
     gstSimpleEarthStream &ses, 
     std::string &raw_packet,
     const std::string &server,
-    const std::string &qt_address);
+    const std::string &qt_address,
+    const bool no_children);
 
 namespace {
   bool help = false;
+  bool no_children = false;
   int row = 0;
   int col = 0;
   int level = 0;
@@ -92,6 +95,7 @@ int main(int argc, char *argv[]) {
   khGetopt options;
   options.flagOpt("help", help);
   options.flagOpt("?", help);
+  options.flagOpt("no_children", no_children);
   options.opt("row", row);
   options.opt("col", col);
   options.opt("level", level);
@@ -150,9 +154,9 @@ int main(int argc, char *argv[]) {
   GEGETPACKET_ERROR get_packet_result = GEGETPACKET_PACKET_NOT_FOUND;
 
   if (qt_address.length() != 0) {
-    get_packet_result = processGlobeRequest(ses, raw_packet, server, qt_address);
+    get_packet_result = processGlobeRequest(ses, raw_packet, server, qt_address, no_children);
   } else {
-    get_packet_result = processGlobeRequest(ses, raw_packet, server, row, col, level);
+    get_packet_result = processGlobeRequest(ses, raw_packet, server, row, col, level, no_children);
   }
 
   if (get_packet_result == GEGETPACKET_WRONG_DB_TYPE) {

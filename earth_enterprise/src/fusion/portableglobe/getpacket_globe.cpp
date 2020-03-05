@@ -34,6 +34,7 @@ namespace {
   gstSimpleEarthStream *ses = nullptr;
   std::string server;
   int quadtree_version = -1;
+  bool process_children = false;
 }
 
 // Copied from our ATAK cut reader code.
@@ -261,26 +262,30 @@ bool validateNodeAndChildren(const qtpacket::KhQuadTreePacket16 &qtPacket,
 
     // Is there another quadtree metadata packet at this address?
     if (node->children.GetCacheNodeBit()) {
-      std::string leaf_qtp_raw;
-      const std::string leaf_qtp_url = server + "/flatfile?q2-" + qt_path.AsString() + "-q." + std::to_string(quadtree_version);
-      //std::cout << indent << leaf_qtp_url << std::endl;
-      const bool leaf_qtp_ret = ses->GetRawPacket(leaf_qtp_url, &leaf_qtp_raw, true);  // third parameter is boolean for decrypt.
-      std::cout << indent << "Quadtree packet " << (leaf_qtp_ret ? "Y" : "N") << " for " << qt_path.AsString();
-      if (!leaf_qtp_ret) {
-        std::cout << " <-- ********************";
-      }
-      std::cout << std::endl;
+      if (process_children) {
+        std::string leaf_qtp_raw;
+        const std::string leaf_qtp_url = server + "/flatfile?q2-" + qt_path.AsString() + "-q." + std::to_string(quadtree_version);
+        //std::cout << indent << leaf_qtp_url << std::endl;
+        const bool leaf_qtp_ret = ses->GetRawPacket(leaf_qtp_url, &leaf_qtp_raw, true);  // third parameter is boolean for decrypt.
+        std::cout << indent << "Quadtree packet " << (leaf_qtp_ret ? "Y" : "N") << " for " << qt_path.AsString();
+        if (!leaf_qtp_ret) {
+          std::cout << " <-- ********************";
+        }
+        std::cout << std::endl;
 
-      LittleEndianReadBuffer leaf_qtp_uncompressed;
-      if (!KhPktDecompress(leaf_qtp_raw.data(),
-                          leaf_qtp_raw.size(),
-                          &leaf_qtp_uncompressed)) {
-        std::cout << indent << "KhPktDecompress returned false." << std::endl;
+        LittleEndianReadBuffer leaf_qtp_uncompressed;
+        if (!KhPktDecompress(leaf_qtp_raw.data(),
+                            leaf_qtp_raw.size(),
+                            &leaf_qtp_uncompressed)) {
+          std::cout << indent << "KhPktDecompress returned false." << std::endl;
+        } else {
+          qtpacket::KhQuadTreePacket16 leaf_qtp;
+          leaf_qtp.Pull(leaf_qtp_uncompressed);
+          int leaf_node_index = 0;
+          validateNodeAndChildren(leaf_qtp, &leaf_node_index, qt_path);
+        }
       } else {
-        qtpacket::KhQuadTreePacket16 leaf_qtp;
-        leaf_qtp.Pull(leaf_qtp_uncompressed);
-        int leaf_node_index = 0;
-        validateNodeAndChildren(leaf_qtp, &leaf_node_index, qt_path);
+        std::cout << indent << "Quadtree packet skip  " << qt_path.AsString() << std::endl;
       }
     }
   }
@@ -518,13 +523,15 @@ GEGETPACKET_ERROR processGlobeRequest(
     gstSimpleEarthStream &_ses, 
     std::string &raw_packet,
     const std::string &_server,
-    const std::string &qt_address) {
+    const std::string &qt_address,
+    const bool no_children) {
   std::stringstream ss;
   std::string url;
   std::cout << "Processing globe request" << std::endl;
 
   ses = &_ses;
   server = _server;
+  process_children = !no_children;
 
   GEGETPACKET_ERROR ret = GEGETPACKET_SUCCESS;
 
@@ -568,11 +575,12 @@ GEGETPACKET_ERROR processGlobeRequest(
     const std::string &_server,
     const int row,
     const int col,
-    const int level) {
+    const int level,
+    const bool no_children) {
 
   const std::string qtStr = fusion_portableglobe::ConvertToQtNode(col, row, level);
 
   std::cout << "Converted row " << row << ", col " << col << ", level " << level << " to quadtree address \"" << qtStr << "\"" << std::endl;
 
-  return processGlobeRequest(_ses, raw_packet, _server, qtStr);
+  return processGlobeRequest(_ses, raw_packet, _server, qtStr, no_children);
 }
