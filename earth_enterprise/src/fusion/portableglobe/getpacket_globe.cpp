@@ -244,42 +244,44 @@ bool validateNodeAndChildren(const qtpacket::KhQuadTreePacket16 &qtPacket,
     return false;
   }
 
-  if (node->HasLayerOfType(keyhole::QuadtreeLayer::LayerType::QuadtreeLayer_LayerType_LAYER_TYPE_IMAGERY)) {
-    std::string imagery_packet_raw;
-    std::string imagery_packet_url = server + "/flatfile?f1-" + qt_path.AsString() + "-i." + std::to_string(node->image_version);
-    //std::cout << indent << imagery_packet_url << std::endl;
-    const bool imagery_packet_ret = ses->GetRawPacket(imagery_packet_url, &imagery_packet_raw, true);
-    std::cout << indent << "Imagery  packet " << (imagery_packet_ret ? "Y" : "N") << " for " << qt_path.AsString();
-    if (!imagery_packet_ret) {
-      std::cout << " <-- ********************";
-    }
-    std::cout << std::endl;
-  } else {
-    std::cout << indent << "Imagery  packet - for " << qt_path.AsString() << std::endl;
-  }
-
-  // Is there another quadtree metadata packet at this address?
-  if (node->children.GetCacheNodeBit()) {
-    std::string leaf_qtp_raw;
-    const std::string leaf_qtp_url = server + "/flatfile?q2-" + qt_path.AsString() + "-q." + std::to_string(quadtree_version);
-    //std::cout << indent << leaf_qtp_url << std::endl;
-    const bool leaf_qtp_ret = ses->GetRawPacket(leaf_qtp_url, &leaf_qtp_raw, true);  // third parameter is boolean for decrypt.
-    std::cout << indent << "Quadtree packet " << (leaf_qtp_ret ? "Y" : "N") << " for " << qt_path.AsString();
-    if (!leaf_qtp_ret) {
-      std::cout << " <-- ********************";
-    }
-    std::cout << std::endl;
-
-    LittleEndianReadBuffer leaf_qtp_uncompressed;
-    if (!KhPktDecompress(leaf_qtp_raw.data(),
-                        leaf_qtp_raw.size(),
-                        &leaf_qtp_uncompressed)) {
-      std::cout << indent << "KhPktDecompress returned false." << std::endl;
+  if (*node_indexp != 0 || qt_path == QuadtreePath("0")) {
+    if (node->HasLayerOfType(keyhole::QuadtreeLayer::LayerType::QuadtreeLayer_LayerType_LAYER_TYPE_IMAGERY)) {
+      std::string imagery_packet_raw;
+      std::string imagery_packet_url = server + "/flatfile?f1-" + qt_path.AsString() + "-i." + std::to_string(node->image_version);
+      //std::cout << indent << imagery_packet_url << std::endl;
+      const bool imagery_packet_ret = ses->GetRawPacket(imagery_packet_url, &imagery_packet_raw, true);
+      std::cout << indent << "Imagery  packet " << (imagery_packet_ret ? "Y" : "N") << " for " << qt_path.AsString();
+      if (!imagery_packet_ret) {
+        std::cout << " <-- ********************";
+      }
+      std::cout << std::endl;
     } else {
-      qtpacket::KhQuadTreePacket16 leaf_qtp;
-      leaf_qtp.Pull(leaf_qtp_uncompressed);
-      int leaf_node_index = 0;
-      validateNodeAndChildren(leaf_qtp, &leaf_node_index, qt_path);
+      std::cout << indent << "Imagery  packet - for " << qt_path.AsString() << std::endl;
+    }
+
+    // Is there another quadtree metadata packet at this address?
+    if (node->children.GetCacheNodeBit()) {
+      std::string leaf_qtp_raw;
+      const std::string leaf_qtp_url = server + "/flatfile?q2-" + qt_path.AsString() + "-q." + std::to_string(quadtree_version);
+      //std::cout << indent << leaf_qtp_url << std::endl;
+      const bool leaf_qtp_ret = ses->GetRawPacket(leaf_qtp_url, &leaf_qtp_raw, true);  // third parameter is boolean for decrypt.
+      std::cout << indent << "Quadtree packet " << (leaf_qtp_ret ? "Y" : "N") << " for " << qt_path.AsString();
+      if (!leaf_qtp_ret) {
+        std::cout << " <-- ********************";
+      }
+      std::cout << std::endl;
+
+      LittleEndianReadBuffer leaf_qtp_uncompressed;
+      if (!KhPktDecompress(leaf_qtp_raw.data(),
+                          leaf_qtp_raw.size(),
+                          &leaf_qtp_uncompressed)) {
+        std::cout << indent << "KhPktDecompress returned false." << std::endl;
+      } else {
+        qtpacket::KhQuadTreePacket16 leaf_qtp;
+        leaf_qtp.Pull(leaf_qtp_uncompressed);
+        int leaf_node_index = 0;
+        validateNodeAndChildren(leaf_qtp, &leaf_node_index, qt_path);
+      }
     }
   }
 
