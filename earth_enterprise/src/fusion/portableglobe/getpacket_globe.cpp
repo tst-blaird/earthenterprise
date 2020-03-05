@@ -264,7 +264,7 @@ bool validateNodeAndChildren(const qtpacket::KhQuadTreePacket16 &qtPacket,
     if (node->children.GetCacheNodeBit()) {
       if (process_children) {
         std::string leaf_qtp_raw;
-        const std::string leaf_qtp_url = server + "/flatfile?q2-" + qt_path.AsString() + "-q." + std::to_string(quadtree_version);
+        const std::string leaf_qtp_url = server + "/flatfile?q2-" + qt_path.AsString() + "-q." + std::to_string(node->cnode_version);
         //std::cout << indent << leaf_qtp_url << std::endl;
         const bool leaf_qtp_ret = ses->GetRawPacket(leaf_qtp_url, &leaf_qtp_raw, true);  // third parameter is boolean for decrypt.
         std::cout << indent << "Quadtree packet " << (leaf_qtp_ret ? "Y" : "N") << " for " << qt_path.AsString();
